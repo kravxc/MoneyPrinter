@@ -65,13 +65,17 @@ def test_group_segments_respects_scene_break():
     assert len(groups) == 2
 
 
-def test_group_segments_respects_max_duration():
-    segs = [
-        _seg(0, 30, "долго"),
-        _seg(30.5, 60, "ещё дольше"),
-    ]
-    groups = group_segments(segs, scene_breaks=[], max_gap=2.0, max_duration=40.0)
-    assert len(groups) == 2
+def test_generate_candidates_splits_long_story():
+    # история длиннее max_duration делится на последовательные части без потерь
+    segs = [_seg(0, 40, "длинная история"), _seg(40.5, 80, "продолжение")]
+    e = np.ones(100)
+    t = np.linspace(0, 100, 100)
+    cands = generate_candidates(
+        e, t, segs, [], [], duration=100.0, min_duration=4.0, max_duration=50.0
+    )
+    assert len(cands) == 2
+    assert cands[0].start == 0
+    assert cands[1].end >= 80
 
 
 def test_generate_candidates_groups_into_story():

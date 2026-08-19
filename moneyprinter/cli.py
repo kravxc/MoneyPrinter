@@ -21,7 +21,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("-o", "--output", default="clips", help="Папка для клипов (default: clips)")
     p_run.add_argument("-n", "--max-clips", type=int, default=10, help="Сколько клипов сделать (default: 10)")
     p_run.add_argument("--min-duration", type=float, default=10.0, help="Мин. длина клипа, сек")
-    p_run.add_argument("--max-duration", type=float, default=60.0, help="Макс. длина клипа, сек (для Shorts/TikTok)")
+    p_run.add_argument("--max-duration", type=float, default=180.0, help="Макс. длина клипа, сек (Shorts допускает до 180)")
     p_run.add_argument("--story-gap", type=float, default=2.0, help="Макс. пауза между репликами одной мысли, сек")
     p_run.add_argument("--min-score", type=float, default=0.0, help="Отсечка по суммарному скору")
     p_run.add_argument("--horizontal", action="store_true", help="Не конвертировать в 9:16 (оставить пропорции)")

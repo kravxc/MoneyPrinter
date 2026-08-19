@@ -27,7 +27,7 @@ class Config:
     output_dir: str = "clips"
     max_clips: int = 10
     min_duration: float = 10.0
-    max_duration: float = 60.0
+    max_duration: float = 180.0
     min_score: float = 0.0
     vertical: bool = True
     blur_bg: bool = True
