@@ -120,10 +120,10 @@ def make_vertical(
         )
 
     if segments:
-        ass_path = str(Path(out_path).with_suffix(".ass"))
+        ass_path = str(Path(out_path).with_suffix(".ass")).replace("\\", "/")
         with open(ass_path, "w", encoding="utf-8") as f:
             f.write(_build_ass(segments, width, height))
-        filter_complex += f";[v]ass={ass_path}[v]"
+        filter_complex += f";[v]ass='{ass_path}'[v]"
 
     cmd = [
         "ffmpeg", "-v", "error", "-y",
