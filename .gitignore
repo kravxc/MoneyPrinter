@@ -5,7 +5,8 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 clips/
-input/
+input/*
+!input/.gitkeep
 build/
 dist/
 ]
