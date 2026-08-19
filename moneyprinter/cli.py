@@ -20,12 +20,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("input", help="Путь к видеофайлу")
     p_run.add_argument("-o", "--output", default="clips", help="Папка для клипов (default: clips)")
     p_run.add_argument("-n", "--max-clips", type=int, default=10, help="Сколько клипов сделать (default: 10)")
-    p_run.add_argument("--min-duration", type=float, default=4.0, help="Мин. длина клипа, сек")
+    p_run.add_argument("--min-duration", type=float, default=10.0, help="Мин. длина клипа, сек")
     p_run.add_argument("--max-duration", type=float, default=60.0, help="Макс. длина клипа, сек (для Shorts/TikTok)")
+    p_run.add_argument("--story-gap", type=float, default=2.0, help="Макс. пауза между репликами одной мысли, сек")
     p_run.add_argument("--min-score", type=float, default=0.0, help="Отсечка по суммарному скору")
     p_run.add_argument("--horizontal", action="store_true", help="Не конвертировать в 9:16 (оставить пропорции)")
     p_run.add_argument("--crop", action="store_true", help="Вертикаль кадрированием вместо размытого фона")
-    p_run.add_argument("--no-subtitles", action="store_true", help="Не вшивать субтитры в вертикальный клип")
     p_run.add_argument("--whisper-model", default="base", help="Модель Whisper: tiny/base/small/medium/large")
     p_run.add_argument("--device", default="cpu", help="cpu или cuda")
     p_run.add_argument("--language", default=None, help="Язык для транскрипции (напр. ru, en)")
@@ -63,7 +63,7 @@ def main(argv=None) -> int:
             min_score=args.min_score,
             vertical=not args.horizontal,
             blur_bg=not args.crop,
-            subtitles=not args.no_subtitles,
+            story_gap=args.story_gap,
             whisper_model=args.whisper_model,
             device=args.device,
             language=args.language,

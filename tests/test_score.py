@@ -3,6 +3,7 @@ import numpy as np
 from moneyprinter.models import ClipCandidate, SceneBreak, TimestampedText
 from moneyprinter.score import (
     generate_candidates,
+    group_segments,
     non_max_suppress,
     score_text_segment,
 )
@@ -41,6 +42,48 @@ def test_generate_candidates_bounds():
     c = cands[0]
     assert c.start >= 0 and c.end <= 30
     assert c.total_score > 0
+
+
+def test_group_segments_merges_close_breaks_far():
+    segs = [
+        _seg(0, 2, "реплика один"),
+        _seg(2.3, 4.5, "реплика два"),
+        _seg(8.0, 10.0, "далёкая реплика"),
+    ]
+    groups = group_segments(segs, scene_breaks=[], max_gap=2.0)
+    assert len(groups) == 2
+    assert len(groups[0]) == 2
+    assert len(groups[1]) == 1
+
+
+def test_group_segments_respects_scene_break():
+    segs = [
+        _seg(0, 2, "до смены сцены"),
+        _seg(2.5, 4, "после смены сцены"),
+    ]
+    groups = group_segments(segs, scene_breaks=[SceneBreak(time=2.3)], max_gap=5.0)
+    assert len(groups) == 2
+
+
+def test_group_segments_respects_max_duration():
+    segs = [
+        _seg(0, 30, "долго"),
+        _seg(30.5, 60, "ещё дольше"),
+    ]
+    groups = group_segments(segs, scene_breaks=[], max_gap=2.0, max_duration=40.0)
+    assert len(groups) == 2
+
+
+def test_generate_candidates_groups_into_story():
+    segs = [
+        _seg(0, 2, "обычная реплика"),
+        _seg(2.4, 4.5, "и продолжение истории"),
+    ]
+    e = np.ones(100)
+    t = np.linspace(0, 10, 100)
+    cands = generate_candidates(e, t, segs, [], [], duration=10.0, min_duration=4.0)
+    assert len(cands) == 1
+    assert cands[0].text == "обычная реплика и продолжение истории"
 
 
 def test_non_max_suppress_overlap():

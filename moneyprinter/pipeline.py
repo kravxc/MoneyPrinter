@@ -26,12 +26,12 @@ class Config:
     input_path: str
     output_dir: str = "clips"
     max_clips: int = 10
-    min_duration: float = 4.0
+    min_duration: float = 10.0
     max_duration: float = 60.0
     min_score: float = 0.0
     vertical: bool = True
     blur_bg: bool = True
-    subtitles: bool = True
+    story_gap: float = 2.0
     whisper_model: str = "base"
     device: str = "cpu"
     language: Optional[str] = None
@@ -130,6 +130,7 @@ def process(cfg: Config) -> PipelineResult:
                 duration=info.duration,
                 min_duration=cfg.min_duration,
                 max_duration=cfg.max_duration,
+                max_gap=cfg.story_gap,
             )
         else:
             candidates = _energy_only_candidates(
@@ -150,24 +151,15 @@ def process(cfg: Config) -> PipelineResult:
         picked = score_mod.pick_top(candidates, max_clips=cfg.max_clips, min_score=cfg.min_score)
 
         # 6) Нарезка
-        burn_subs = cfg.subtitles and media.has_subtitles_filter()
-        if cfg.subtitles and not burn_subs:
-            print(
-                "[warn] ffmpeg собран без libass — субтитры не вшиваю в видео, "
-                "кладу SRT-файлы рядом. Для вшивания: brew install ffmpeg-full"
-            )
-
         bar = tqdm(total=sum(c.duration for c in picked), desc="Нарезка", unit="s")
         offset = 0.0
         for i, cand in enumerate(picked, start=1):
             if cfg.vertical:
                 out_name = f"clip_{i:02d}_s{cand.start:.1f}_e{cand.end:.1f}.mp4"
-                segs = [s for s in text_segments if s.start >= cand.start and s.end <= cand.end]
                 cutting.make_vertical(
                     input_path,
                     cand,
                     str(out_dir / out_name),
-                    segments=segs if (burn_subs and segs) else None,
                     blur_bg=cfg.blur_bg,
                     bar=bar,
                     offset=offset,
@@ -176,11 +168,6 @@ def process(cfg: Config) -> PipelineResult:
                 out_name = f"clip_{i:02d}_s{cand.start:.1f}_e{cand.end:.1f}.mp4"
                 cutting.cut_clip(input_path, cand, str(out_dir / out_name), bar=bar, offset=offset)
             offset += cand.duration
-
-            if cfg.subtitles and text_segments:
-                segs = [s for s in text_segments if s.start >= cand.start and s.end <= cand.end]
-                if segs:
-                    cutting.write_srt(segs, str(out_dir / out_name).replace(".mp4", ".srt"))
 
             result.clips.append(
                 ClipResult(

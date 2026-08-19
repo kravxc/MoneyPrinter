@@ -3,9 +3,9 @@ import subprocess
 
 import pytest
 
-from moneyprinter.cutting import _ass_time, _build_ass, cut_clip, make_vertical
+from moneyprinter.cutting import cut_clip, make_vertical
 from moneyprinter.media import probe
-from moneyprinter.models import ClipCandidate, TimestampedText
+from moneyprinter.models import ClipCandidate
 
 pytestmark = pytest.mark.skipif(
     shutil.which("ffmpeg") is None, reason="ffmpeg required"
@@ -59,17 +59,3 @@ def test_make_vertical_crop(sample_video, tmp_path):
     make_vertical(sample_video, cand, out, blur_bg=False)
     info = probe(out)
     assert info.width == 1080 and info.height == 1920
-
-
-def test_ass_time():
-    assert _ass_time(0) == "0:00:00.00"
-    assert _ass_time(75.5) == "0:01:15.50"
-    assert _ass_time(3661.1) == "1:01:01.10"
-
-
-def test_build_ass():
-    segs = [TimestampedText(start=1.0, end=2.5, text="привет мир")]
-    ass = _build_ass(segs)
-    assert "[Events]" in ass
-    assert "Dialogue:" in ass
-    assert "привет мир" in ass

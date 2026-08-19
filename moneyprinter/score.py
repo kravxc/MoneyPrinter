@@ -94,6 +94,45 @@ def _snap_to_boundary(
     return best[1] if best else t
 
 
+def group_segments(
+    segments: List[TimestampedText],
+    scene_breaks: List[SceneBreak],
+    max_gap: float = 2.0,
+    max_duration: float = 60.0,
+) -> List[List[TimestampedText]]:
+    """Склеивает сегменты транскрипции в «мысли» — законченные истории.
+
+    Соседние реплики объединяются, пока пауза между ними мала и нет смены
+    сцены. Большая пауза или смена сцены — граница мысли.
+    """
+    scene_times = sorted(s.time for s in scene_breaks)
+    groups: List[List[TimestampedText]] = []
+    current: List[TimestampedText] = []
+
+    def _break_here(prev_end: float, next_start: float) -> bool:
+        gap = next_start - prev_end
+        if gap > max_gap:
+            return True
+        for st in scene_times:
+            if prev_end - 0.3 <= st <= next_start + 0.3:
+                return True
+        return False
+
+    for seg in segments:
+        if current:
+            too_long = seg.end - current[0].start > max_duration
+            if too_long or _break_here(current[-1].end, seg.start):
+                groups.append(current)
+                current = [seg]
+            else:
+                current.append(seg)
+        else:
+            current = [seg]
+    if current:
+        groups.append(current)
+    return groups
+
+
 def generate_candidates(
     energy_score: np.ndarray,
     energy_times: np.ndarray,
@@ -103,8 +142,9 @@ def generate_candidates(
     duration: float,
     min_duration: float = 4.0,
     max_duration: float = 60.0,
+    max_gap: float = 2.0,
 ) -> List[ClipCandidate]:
-    """Строит список кандидатов: базой служат текстовые сегменты Whisper.
+    """Строит список кандидатов: базой служат «мысли» из сегментов Whisper.
 
     Границы притягиваются к тишине/сменам сцен для аккуратной нарезки.
     """
@@ -114,8 +154,8 @@ def generate_candidates(
     boundaries = sorted(set(round(b, 2) for b in boundaries))
 
     candidates: List[ClipCandidate] = []
-    for seg in text_segments:
-        start, end = seg.start, seg.end
+    for group in group_segments(text_segments, scene_breaks, max_gap, max_duration):
+        start, end = group[0].start, group[-1].end
         # Расширяем до минимальной длины, притягивая границы к тишине/сценам
         if end - start < min_duration:
             need = min_duration - (end - start)
@@ -139,14 +179,15 @@ def generate_candidates(
         mask = (energy_times >= start) & (energy_times <= end)
         e = float(np.mean(energy_score[mask])) if mask.any() else 0.0
 
+        text = " ".join(s.text.strip() for s in group).strip()
         cand = ClipCandidate(
             start=start,
             end=end,
             energy_score=e,
-            text_score=score_text_segment(seg),
-            laughter_score=_word_in(seg.text, LAUGHTER_MARKERS),
-            text=seg.text.strip(),
-            reason="text+energy",
+            text_score=float(np.max([score_text_segment(s) for s in group])),
+            laughter_score=sum(_word_in(s.text, LAUGHTER_MARKERS) for s in group),
+            text=text,
+            reason="story",
         )
         candidates.append(cand)
 
