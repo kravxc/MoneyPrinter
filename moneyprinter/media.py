@@ -165,11 +165,3 @@ def extract_frame(path: str, out_png: str, time: float = 0.0) -> str:
 
 def duration_of(path: str) -> float:
     return probe(path).duration
-
-
-def has_subtitles_filter() -> bool:
-    """Проверяет, собран ли ffmpeg с libass (фильтры subtitles/ass)."""
-    require_ffmpeg()
-    result = _run(["ffmpeg", "-hide_banner", "-filters"], check=False)
-    filters = result.stdout or ""
-    return any(name in filters for name in (" subtitles ", " ass "))
