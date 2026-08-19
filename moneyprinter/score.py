@@ -98,12 +98,12 @@ def group_segments(
     segments: List[TimestampedText],
     scene_breaks: List[SceneBreak],
     max_gap: float = 2.0,
-    max_duration: float = 60.0,
 ) -> List[List[TimestampedText]]:
     """Склеивает сегменты транскрипции в «мысли» — законченные истории.
 
     Соседние реплики объединяются, пока пауза между ними мала и нет смены
-    сцены. Большая пауза или смена сцены — граница мысли.
+    сцены. Большая пауза или смена сцены — граница мысли. Длина мысли
+    ничем не ограничена — границы ставят только паузы и сцены.
     """
     scene_times = sorted(s.time for s in scene_breaks)
     groups: List[List[TimestampedText]] = []
@@ -120,8 +120,7 @@ def group_segments(
 
     for seg in segments:
         if current:
-            too_long = seg.end - current[0].start > max_duration
-            if too_long or _break_here(current[-1].end, seg.start):
+            if _break_here(current[-1].end, seg.start):
                 groups.append(current)
                 current = [seg]
             else:
@@ -133,6 +132,18 @@ def group_segments(
     return groups
 
 
+def _split_story(start: float, end: float, max_duration: float) -> List[tuple]:
+    """Делит длинную историю на последовательные части без потери кусков."""
+    if end - start <= max_duration:
+        return [(start, end)]
+    parts = []
+    t = start
+    while t < end - 1e-6:
+        parts.append((t, min(end, t + max_duration)))
+        t += max_duration
+    return parts
+
+
 def generate_candidates(
     energy_score: np.ndarray,
     energy_times: np.ndarray,
@@ -141,12 +152,14 @@ def generate_candidates(
     silences: List[tuple],
     duration: float,
     min_duration: float = 4.0,
-    max_duration: float = 60.0,
+    max_duration: float = 180.0,
     max_gap: float = 2.0,
 ) -> List[ClipCandidate]:
     """Строит список кандидатов: базой служат «мысли» из сегментов Whisper.
 
-    Границы притягиваются к тишине/сменам сцен для аккуратной нарезки.
+    История целиком становится клипом; если она длиннее max_duration —
+    разбивается на последовательные части. Границы притягиваются
+    к тишине/сменам сцен для аккуратной нарезки.
     """
     boundaries = [s.time for s in scene_breaks]
     for start, end in silences:
@@ -154,7 +167,7 @@ def generate_candidates(
     boundaries = sorted(set(round(b, 2) for b in boundaries))
 
     candidates: List[ClipCandidate] = []
-    for group in group_segments(text_segments, scene_breaks, max_gap, max_duration):
+    for group in group_segments(text_segments, scene_breaks, max_gap):
         start, end = group[0].start, group[-1].end
         # Расширяем до минимальной длины, притягивая границы к тишине/сценам
         if end - start < min_duration:
@@ -162,34 +175,30 @@ def generate_candidates(
             start = max(0.0, start - need / 2)
             end = min(duration, end + need / 2)
 
-        # Если клип длиннее максимума — обрезаем центр (самое «горячее»)
-        if end - start > max_duration:
-            mid = (start + end) / 2
-            start = mid - max_duration / 2
-            end = mid + max_duration / 2
+        for part_start, part_end in _split_story(start, end, max_duration):
+            part_start = _snap_to_boundary(part_start, boundaries, -1)
+            part_end = _snap_to_boundary(part_end, boundaries, +1)
+            if part_end - part_start < min_duration * 0.5:
+                continue
+            if part_end > duration:
+                part_end = duration
 
-        start = _snap_to_boundary(start, boundaries, -1)
-        end = _snap_to_boundary(end, boundaries, +1)
-        if end - start < min_duration * 0.5:
-            continue
-        if end > duration:
-            end = duration
+            # Энергия окна
+            mask = (energy_times >= part_start) & (energy_times <= part_end)
+            e = float(np.mean(energy_score[mask])) if mask.any() else 0.0
 
-        # Энергия окна
-        mask = (energy_times >= start) & (energy_times <= end)
-        e = float(np.mean(energy_score[mask])) if mask.any() else 0.0
-
-        text = " ".join(s.text.strip() for s in group).strip()
-        cand = ClipCandidate(
-            start=start,
-            end=end,
-            energy_score=e,
-            text_score=float(np.max([score_text_segment(s) for s in group])),
-            laughter_score=sum(_word_in(s.text, LAUGHTER_MARKERS) for s in group),
-            text=text,
-            reason="story",
-        )
-        candidates.append(cand)
+            segs = [s for s in group if s.start >= part_start and s.end <= part_end]
+            text = " ".join(s.text.strip() for s in segs).strip()
+            cand = ClipCandidate(
+                start=part_start,
+                end=part_end,
+                energy_score=e,
+                text_score=float(np.max([score_text_segment(s) for s in segs])) if segs else 0.0,
+                laughter_score=sum(_word_in(s.text, LAUGHTER_MARKERS) for s in segs),
+                text=text,
+                reason="story",
+            )
+            candidates.append(cand)
 
     return candidates
 
