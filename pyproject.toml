@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "moneyprinter"
+version = "0.1.0"
+description = "Режет стримы/сериалы/фильмы на яркие вертикальные клипы для Shorts/TikTok"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "kravxc" }]
+dependencies = [
+    "numpy>=1.21",
+    "requests>=2.28",
+    "tqdm>=4.60",
+]
+
+[project.optional-dependencies]
+# Тяжёлые AI-зависимости вынесены в extras, чтобы базовый запуск оставался лёгким
+transcribe = ["openai-whisper>=20231117"]
+scenes = ["scenedetect[opencv]>=0.6.4"]
+llm = ["ollama>=0.4"]
+dev = ["pytest>=7.0"]
+all = [
+    "openai-whisper>=20231117",
+    "scenedetect[opencv]>=0.6.4",
+    "ollama>=0.4",
+    "pytest>=7.0",
+]
+
+[project.scripts]
+moneyprinter = "moneyprinter.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["moneyprinter*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
