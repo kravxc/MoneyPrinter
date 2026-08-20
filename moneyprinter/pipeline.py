@@ -40,6 +40,7 @@ class Config:
     llm_model: Optional[str] = None
     llm_url: Optional[str] = None
     jobs: int = 0  # 0 = все ядра CPU
+    auto_install: bool = True  # сам доустанавливать недостающие AI-зависимости
     keep_audio: bool = False  # не используется сейчас, задел на будущее
     temp_dir: Optional[str] = None
 
@@ -118,6 +119,7 @@ def process(cfg: Config) -> PipelineResult:
                     model_name=cfg.whisper_model,
                     device=cfg.device,
                     language=cfg.language,
+                    auto_install=cfg.auto_install,
                 )
             except transcribe_mod.TranscriptionError as exc:
                 print(f"[warn] Транскрипция недоступна ({exc}). Использую эвристики без текста.")
