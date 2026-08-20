@@ -42,7 +42,7 @@ def _detect_pyscenedetect(path: str, threshold: float = 27.0) -> List[SceneBreak
         from scenedetect import ContentDetector, detect
     except ImportError:
         raise ImportError("scenedetect не установлен")
-    scenes = detect(str(path), ContentDetector(threshold=threshold))
+    scenes = detect(str(path), ContentDetector(threshold=threshold), show_progress=True)
     breaks: List[SceneBreak] = []
     for scene in scenes:
         start = scene[0].get_seconds()
