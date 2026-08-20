@@ -33,34 +33,6 @@ STOP_MARKERS = [
     "подпишись", "лайк", "не забудь",
 ]
 
-# Маркеры рекламы/казино/беттинга — такие куски вырезаются из клипов,
-# чтобы аккаунты Shorts/TikTok не попадали в теневой бан.
-AD_MARKERS = [
-    # реклама / спонсорство
-    "реклама", "спонсор", "спонсиру", "промокод", "промо",
-    # казино / ставки / беттинг
-    "казино", "ставк", "букмекер", "тотализатор", "игровой автомат",
-    "1xbet", "1хбет", "фонбет", "бетсити", "винлайн", "мелбет",
-    "лига ставок", "pinnacle", "париматч",
-    "депозит", "бонус", "фриспин", "вывод денег", "вывод средств", "пополни",
-    # подписка / лайки (перебивки)
-    "подпишись", "подписывайся", "подписывайтесь", "поставь лайк",
-    "ставь лайк", "не забудь подписаться",
-    # английские
-    "advertis", "sponsor", "promo code", "promocode", "casino", "betting",
-    "bookmaker", "free spins", "slots", "deposit", "withdraw", "wager",
-    "subscribe", "don't forget to like", "giveaway",
-]
-
-
-def mark_ads(segments: List[TimestampedText], markers: Iterable[str] = AD_MARKERS) -> List[TimestampedText]:
-    """Помечает сегменты, содержащие рекламу/казино/беттинг."""
-    for seg in segments:
-        low = seg.text.lower()
-        if any(m in low for m in markers):
-            seg.is_ad = True
-    return segments
-
 
 def _word_in(text: str, words: Iterable[str]) -> int:
     low = text.lower()
@@ -180,6 +152,27 @@ def _split_story(start: float, end: float, max_duration: float) -> List[tuple]:
     return parts
 
 
+def _trim_banner_overlap(
+    start: float, end: float, banner_ranges: List[tuple], min_duration: float
+) -> Optional[tuple]:
+    """Обрезает кандидата по границам рекламных банеров.
+
+    Возвращает (start, end) без пересечения с банерами или None,
+    если после обрезки не осталось нормального клипа.
+    """
+    for r0, r1 in banner_ranges:
+        if start < r1 and end > r0:  # есть пересечение
+            left_len = r0 - start
+            right_len = end - r1
+            if left_len >= right_len:
+                end = r0
+            else:
+                start = r1
+            if end - start < min_duration * 0.5:
+                return None
+    return (start, end)
+
+
 def generate_candidates(
     energy_score: np.ndarray,
     energy_times: np.ndarray,
@@ -191,6 +184,7 @@ def generate_candidates(
     max_duration: float = 180.0,
     max_gap: float = 2.0,
     remove_ads: bool = True,
+    banner_ranges: List[tuple] = (),
 ) -> List[ClipCandidate]:
     """Строит список кандидатов: базой служат «мысли» из сегментов Whisper.
 
@@ -221,6 +215,13 @@ def generate_candidates(
                 continue
             if part_end > duration:
                 part_end = duration
+
+            # Не пускаем клип в зону рекламного банера
+            if remove_ads and banner_ranges:
+                trimmed = _trim_banner_overlap(part_start, part_end, banner_ranges, min_duration)
+                if trimmed is None:
+                    continue
+                part_start, part_end = trimmed
 
             # Энергия окна
             mask = (energy_times >= part_start) & (energy_times <= part_end)

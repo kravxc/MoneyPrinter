@@ -2,9 +2,9 @@ import numpy as np
 
 from moneyprinter.models import ClipCandidate, SceneBreak, TimestampedText
 from moneyprinter.score import (
+    _trim_banner_overlap,
     generate_candidates,
     group_segments,
-    mark_ads,
     non_max_suppress,
     score_text_segment,
 )
@@ -91,31 +91,13 @@ def test_generate_candidates_groups_into_story():
     assert cands[0].text == "обычная реплика и продолжение истории"
 
 
-def test_mark_ads_detects_casino_betting():
-    segs = [
-        _seg(0, 2, "какой смешной момент"),
-        _seg(3, 5, "промокод на депозит в казино 1xbet"),
-        _seg(6, 8, "подписывайтесь на канал"),
-    ]
-    mark_ads(segs)
-    assert not segs[0].is_ad
-    assert segs[1].is_ad
-    assert segs[2].is_ad
-
-
-def test_mark_ads_plain_text_not_flagged():
-    segs = [_seg(0, 2, "просто интересная история без рекламы")]
-    mark_ads(segs)
-    assert not segs[0].is_ad
-
-
 def test_group_segments_splits_around_ads():
     segs = [
         _seg(0, 2, "первая история"),
-        _seg(2.3, 4, "реклама казино ставки"),
+        _seg(2.3, 4, "рекламный банер"),
         _seg(4.3, 7, "вторая история"),
     ]
-    mark_ads(segs)
+    segs[1].is_ad = True
     groups = group_segments(segs, scene_breaks=[], max_gap=5.0, remove_ads=True)
     assert len(groups) == 2
     assert len(groups[0]) == 1 and groups[0][0].text == "первая история"
@@ -125,9 +107,9 @@ def test_group_segments_splits_around_ads():
 def test_group_segments_keeps_ads_if_requested():
     segs = [
         _seg(0, 2, "первая"),
-        _seg(2.3, 4, "промокод казино"),
+        _seg(2.3, 4, "банер"),
     ]
-    mark_ads(segs)
+    segs[1].is_ad = True
     groups = group_segments(segs, scene_breaks=[], max_gap=5.0, remove_ads=False)
     assert len(groups) == 1
     assert len(groups[0]) == 2
@@ -136,14 +118,43 @@ def test_group_segments_keeps_ads_if_requested():
 def test_generate_candidates_skips_ad_stories():
     segs = [
         _seg(0, 2, "обычная реплика"),
-        _seg(2.4, 5, "забирай бонус в казино"),
+        _seg(2.4, 5, "рекламный банер на экране"),
     ]
-    mark_ads(segs)
+    segs[1].is_ad = True
     e = np.ones(50)
     t = np.linspace(0, 6, 50)
     cands = generate_candidates(e, t, segs, [], [], duration=6.0, remove_ads=True)
     assert len(cands) == 1
-    assert "казино" not in cands[0].text
+    assert "банер" not in cands[0].text
+
+
+def test_trim_banner_overlap_removes_banner_from_clip():
+    # клип 0-20, банер 8-15 → остаётся 0-8
+    r = _trim_banner_overlap(0.0, 20.0, [(8.0, 15.0)], min_duration=4.0)
+    assert r == (0.0, 8.0)
+
+
+def test_trim_banner_overlap_no_overlap_unchanged():
+    r = _trim_banner_overlap(0.0, 10.0, [(20.0, 30.0)], min_duration=4.0)
+    assert r == (0.0, 10.0)
+
+
+def test_trim_banner_overlap_too_short_dropped():
+    # после обрезки осталось меньше половины минимума → None
+    r = _trim_banner_overlap(0.0, 10.0, [(2.0, 20.0)], min_duration=15.0)
+    assert r is None
+
+
+def test_generate_candidates_trims_banner_overlap():
+    segs = [_seg(0, 3, "реплика"), _seg(3.2, 5, "ещё")]
+    e = np.ones(100)
+    t = np.linspace(0, 10, 100)
+    cands = generate_candidates(
+        e, t, segs, [], [], duration=10.0, min_duration=4.0,
+        remove_ads=True, banner_ranges=[(3.0, 10.0)],
+    )
+    assert len(cands) == 1
+    assert cands[0].end == 3.0
 
 
 def test_non_max_suppress_overlap():
