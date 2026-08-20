@@ -128,20 +128,26 @@ def test_generate_candidates_skips_ad_stories():
     assert "банер" not in cands[0].text
 
 
-def test_trim_banner_overlap_removes_banner_from_clip():
-    # клип 0-20, банер 8-15 → остаётся 0-8
-    r = _trim_banner_overlap(0.0, 20.0, [(8.0, 15.0)], min_duration=4.0)
-    assert r == (0.0, 8.0)
+def test_trim_banner_overlap_shifts_window_right_keeping_length():
+    # окно 0-20, банер 8-15, хватает места → сдвиг вправо, длина сохраняется
+    r = _trim_banner_overlap(0.0, 20.0, [(8.0, 15.0)], duration=50.0, min_duration=4.0)
+    assert r == (15.0, 35.0)
+
+
+def test_trim_banner_overlap_shifts_window_left():
+    # окно 20-50, банер 45-60 → сдвиг влево, окно 15-45 (ближе к исходному)
+    r = _trim_banner_overlap(20.0, 50.0, [(45.0, 60.0)], duration=100.0, min_duration=4.0)
+    assert r == (15.0, 45.0)
 
 
 def test_trim_banner_overlap_no_overlap_unchanged():
-    r = _trim_banner_overlap(0.0, 10.0, [(20.0, 30.0)], min_duration=4.0)
+    r = _trim_banner_overlap(0.0, 10.0, [(20.0, 30.0)], duration=60.0, min_duration=4.0)
     assert r == (0.0, 10.0)
 
 
 def test_trim_banner_overlap_too_short_dropped():
-    # после обрезки осталось меньше половины минимума → None
-    r = _trim_banner_overlap(0.0, 10.0, [(2.0, 20.0)], min_duration=15.0)
+    # справа нет места, слева остаётся слишком мало → None
+    r = _trim_banner_overlap(0.0, 10.0, [(2.0, 20.0)], duration=15.0, min_duration=15.0)
     assert r is None
 
 

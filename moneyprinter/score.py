@@ -153,23 +153,48 @@ def _split_story(start: float, end: float, max_duration: float) -> List[tuple]:
 
 
 def _trim_banner_overlap(
-    start: float, end: float, banner_ranges: List[tuple], min_duration: float
+    start: float, end: float, banner_ranges: List[tuple], duration: float, min_duration: float
 ) -> Optional[tuple]:
-    """Обрезает кандидата по границам рекламных банеров.
+    """Сдвигает окно клипа в чистую зону, не режа хронометраж.
 
-    Возвращает (start, end) без пересечения с банерами или None,
-    если после обрезки не осталось нормального клипа.
+    Банер выносится за границы клипа: окно целиком сдвигается влево
+    (заканчивается перед банером) или вправо (начинается после банера).
+    Длина окна сохраняется, если в исходнике хватает места; иначе берётся
+    максимально возможный чистый кусок. Если ничего не осталось — None.
     """
-    for r0, r1 in banner_ranges:
-        if start < r1 and end > r0:  # есть пересечение
-            left_len = r0 - start
-            right_len = end - r1
-            if left_len >= right_len:
-                end = r0
+    dur = end - start
+    for _ in range(len(banner_ranges) + 1):
+        moved = False
+        for r0, r1 in banner_ranges:
+            if not (start < r1 and end > r0):
+                continue
+            # вариант влево: окно заканчивается прямо перед банером
+            a_start, a_end = max(0.0, r0 - dur), r0
+            # вариант вправо: окно начинается сразу после банера
+            b_start, b_end = r1, min(duration, r1 + dur)
+            a_len = max(0.0, a_end - a_start)
+            b_len = max(0.0, b_end - b_start)
+            a_full = a_len >= dur - 1e-9
+            b_full = b_len >= dur - 1e-9
+
+            if a_full and b_full:
+                if abs(a_start - start) <= abs(b_start - start):
+                    start, end = a_start, a_end
+                else:
+                    start, end = b_start, b_end
+            elif a_full:
+                start, end = a_start, a_end
+            elif b_full:
+                start, end = b_start, b_end
+            elif a_len >= b_len:
+                start, end = a_start, a_end
             else:
-                start = r1
-            if end - start < min_duration * 0.5:
-                return None
+                start, end = b_start, b_end
+            moved = True
+        if not moved:
+            break
+        if end - start < min_duration * 0.5:
+            return None
     return (start, end)
 
 
@@ -216,9 +241,11 @@ def generate_candidates(
             if part_end > duration:
                 part_end = duration
 
-            # Не пускаем клип в зону рекламного банера
+            # Не пускаем клип в зону рекламного банера: сдвигаем окно целиком
             if remove_ads and banner_ranges:
-                trimmed = _trim_banner_overlap(part_start, part_end, banner_ranges, min_duration)
+                trimmed = _trim_banner_overlap(
+                    part_start, part_end, banner_ranges, duration, min_duration
+                )
                 if trimmed is None:
                     continue
                 part_start, part_end = trimmed
