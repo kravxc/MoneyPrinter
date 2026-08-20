@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from typing import List, Optional
@@ -54,6 +55,53 @@ def _resolve_device(device: str) -> str:
     return "cpu"
 
 
+def _cuda_libs_missing() -> bool:
+    """Проверяет, доступны ли cuBLAS/cuDNN для CTranslate2."""
+    import ctypes
+
+    try:
+        if sys.platform == "win32":
+            ctypes.WinDLL("cublas64_12.dll")
+            ctypes.WinDLL("cudnn64_9.dll")
+        else:
+            ctypes.CDLL("libcublas.so.12")
+            ctypes.CDLL("libcudnn.so.9")
+        return False
+    except OSError:
+        return True
+
+
+def _ensure_cuda_libs() -> bool:
+    """Доустанавливает cuBLAS/cuDNN (pip) и добавляет их bin в PATH."""
+    if not _cuda_libs_missing():
+        return True
+
+    print("[i] CUDA-библиотеки (cuBLAS/cuDNN) не найдены — устанавливаю через pip...")
+    try:
+        subprocess.check_call(
+            [
+                sys.executable, "-m", "pip", "install", "--quiet",
+                "nvidia-cublas-cu12", "nvidia-cudnn-cu12",
+            ]
+        )
+    except Exception:
+        return False
+
+    import glob
+    import site
+
+    for p in site.getsitepackages():
+        if sys.platform == "win32":
+            for d in glob.glob(os.path.join(p, "nvidia", "*", "bin")):
+                os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+        else:
+            for d in glob.glob(os.path.join(p, "nvidia", "*", "lib")):
+                os.environ["LD_LIBRARY_PATH"] = (
+                    d + os.pathsep + os.environ.get("LD_LIBRARY_PATH", "")
+                )
+    return not _cuda_libs_missing()
+
+
 def _ensure_faster_whisper(auto_install: bool) -> bool:
     """Проверяет наличие faster-whisper; при auto_install сам ставит его."""
     try:
@@ -89,35 +137,36 @@ def _transcribe_faster_whisper(
         raise TranscriptionError(_MISSING_HINT) from None
 
     device = _resolve_device(device)
+    if device == "cuda" and not _ensure_cuda_libs():
+        print("[warn] CUDA-библиотеки недоступны — транскрипция на CPU")
+        device = "cpu"
+
     compute_type = "float16" if device == "cuda" else "int8"
     try:
         model = WhisperModel(model_name, device=device, compute_type=compute_type)
+        kwargs = {"vad_filter": True}
+        if language:
+            kwargs["language"] = language
+        segments_iter, _ = model.transcribe(audio_path, **kwargs)
+        segments: List[TimestampedText] = []
+        for seg in segments_iter:
+            text = (seg.text or "").strip()
+            if not text:
+                continue
+            segments.append(
+                TimestampedText(
+                    start=float(seg.start),
+                    end=float(seg.end),
+                    text=text,
+                    no_speech_prob=float(getattr(seg, "no_speech_prob", 0.0)),
+                )
+            )
+        return segments
     except Exception as exc:
         if device == "cuda":
-            print(f"[warn] CUDA не запустился ({exc}) — возвращаюсь на CPU")
-            model = WhisperModel(model_name, device="cpu", compute_type="int8")
-        else:
-            raise
-
-    kwargs = {"vad_filter": True}
-    if language:
-        kwargs["language"] = language
-    segments_iter, _ = model.transcribe(audio_path, **kwargs)
-
-    segments: List[TimestampedText] = []
-    for seg in segments_iter:
-        text = (seg.text or "").strip()
-        if not text:
-            continue
-        segments.append(
-            TimestampedText(
-                start=float(seg.start),
-                end=float(seg.end),
-                text=text,
-                no_speech_prob=float(getattr(seg, "no_speech_prob", 0.0)),
-            )
-        )
-    return segments
+            print(f"[warn] Ошибка CUDA ({exc}) — повторяю на CPU")
+            return _transcribe_faster_whisper(audio_path, model_name, "cpu", language)
+        raise
 
 
 def _transcribe_openai_whisper(
