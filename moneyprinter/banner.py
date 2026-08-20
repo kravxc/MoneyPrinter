@@ -86,6 +86,7 @@ def sample_frames(
     stderr = run_with_progress(
         [
             "ffmpeg", "-v", "info", "-hwaccel", "auto",
+            "-skip_frame", "nokey",  # декодим только ключевые кадры — в ~30 раз быстрее
             "-i", str(input_path),
             "-vf", f"fps=1/{interval_sec},showinfo",
             "-q:v", "4",
