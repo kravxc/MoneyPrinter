@@ -33,6 +33,7 @@ class Config:
     vertical: bool = True
     blur_bg: bool = True
     story_gap: float = 2.0
+    remove_ads: bool = True  # вырезать рекламу/казино/беттинг из клипов
     whisper_model: str = "base"
     device: str = "auto"
     language: Optional[str] = None
@@ -126,6 +127,13 @@ def process(cfg: Config) -> PipelineResult:
             except transcribe_mod.TranscriptionError as exc:
                 print(f"[warn] Транскрипция недоступна ({exc}). Использую эвристики без текста.")
 
+        # 3.5) Пометка рекламы (казино/беттинг/спонсорство)
+        if text_segments and cfg.remove_ads:
+            text_segments = score_mod.mark_ads(text_segments)
+            n_ads = sum(1 for s in text_segments if s.is_ad)
+            if n_ads:
+                print(f"[i] Найдено {n_ads} рекламных фрагментов — они будут вырезаны из клипов")
+
         # 4) Кандидаты
         if text_segments:
             candidates = score_mod.generate_candidates(
@@ -138,6 +146,7 @@ def process(cfg: Config) -> PipelineResult:
                 min_duration=cfg.min_duration,
                 max_duration=cfg.max_duration,
                 max_gap=cfg.story_gap,
+                remove_ads=cfg.remove_ads,
             )
         else:
             candidates = _energy_only_candidates(

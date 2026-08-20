@@ -4,6 +4,7 @@ from moneyprinter.models import ClipCandidate, SceneBreak, TimestampedText
 from moneyprinter.score import (
     generate_candidates,
     group_segments,
+    mark_ads,
     non_max_suppress,
     score_text_segment,
 )
@@ -88,6 +89,61 @@ def test_generate_candidates_groups_into_story():
     cands = generate_candidates(e, t, segs, [], [], duration=10.0, min_duration=4.0)
     assert len(cands) == 1
     assert cands[0].text == "обычная реплика и продолжение истории"
+
+
+def test_mark_ads_detects_casino_betting():
+    segs = [
+        _seg(0, 2, "какой смешной момент"),
+        _seg(3, 5, "промокод на депозит в казино 1xbet"),
+        _seg(6, 8, "подписывайтесь на канал"),
+    ]
+    mark_ads(segs)
+    assert not segs[0].is_ad
+    assert segs[1].is_ad
+    assert segs[2].is_ad
+
+
+def test_mark_ads_plain_text_not_flagged():
+    segs = [_seg(0, 2, "просто интересная история без рекламы")]
+    mark_ads(segs)
+    assert not segs[0].is_ad
+
+
+def test_group_segments_splits_around_ads():
+    segs = [
+        _seg(0, 2, "первая история"),
+        _seg(2.3, 4, "реклама казино ставки"),
+        _seg(4.3, 7, "вторая история"),
+    ]
+    mark_ads(segs)
+    groups = group_segments(segs, scene_breaks=[], max_gap=5.0, remove_ads=True)
+    assert len(groups) == 2
+    assert len(groups[0]) == 1 and groups[0][0].text == "первая история"
+    assert len(groups[1]) == 1 and groups[1][0].text == "вторая история"
+
+
+def test_group_segments_keeps_ads_if_requested():
+    segs = [
+        _seg(0, 2, "первая"),
+        _seg(2.3, 4, "промокод казино"),
+    ]
+    mark_ads(segs)
+    groups = group_segments(segs, scene_breaks=[], max_gap=5.0, remove_ads=False)
+    assert len(groups) == 1
+    assert len(groups[0]) == 2
+
+
+def test_generate_candidates_skips_ad_stories():
+    segs = [
+        _seg(0, 2, "обычная реплика"),
+        _seg(2.4, 5, "забирай бонус в казино"),
+    ]
+    mark_ads(segs)
+    e = np.ones(50)
+    t = np.linspace(0, 6, 50)
+    cands = generate_candidates(e, t, segs, [], [], duration=6.0, remove_ads=True)
+    assert len(cands) == 1
+    assert "казино" not in cands[0].text
 
 
 def test_non_max_suppress_overlap():

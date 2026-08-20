@@ -33,6 +33,34 @@ STOP_MARKERS = [
     "подпишись", "лайк", "не забудь",
 ]
 
+# Маркеры рекламы/казино/беттинга — такие куски вырезаются из клипов,
+# чтобы аккаунты Shorts/TikTok не попадали в теневой бан.
+AD_MARKERS = [
+    # реклама / спонсорство
+    "реклама", "спонсор", "спонсиру", "промокод", "промо",
+    # казино / ставки / беттинг
+    "казино", "ставк", "букмекер", "тотализатор", "игровой автомат",
+    "1xbet", "1хбет", "фонбет", "бетсити", "винлайн", "мелбет",
+    "лига ставок", "pinnacle", "париматч",
+    "депозит", "бонус", "фриспин", "вывод денег", "вывод средств", "пополни",
+    # подписка / лайки (перебивки)
+    "подпишись", "подписывайся", "подписывайтесь", "поставь лайк",
+    "ставь лайк", "не забудь подписаться",
+    # английские
+    "advertis", "sponsor", "promo code", "promocode", "casino", "betting",
+    "bookmaker", "free spins", "slots", "deposit", "withdraw", "wager",
+    "subscribe", "don't forget to like", "giveaway",
+]
+
+
+def mark_ads(segments: List[TimestampedText], markers: Iterable[str] = AD_MARKERS) -> List[TimestampedText]:
+    """Помечает сегменты, содержащие рекламу/казино/беттинг."""
+    for seg in segments:
+        low = seg.text.lower()
+        if any(m in low for m in markers):
+            seg.is_ad = True
+    return segments
+
 
 def _word_in(text: str, words: Iterable[str]) -> int:
     low = text.lower()
@@ -98,12 +126,15 @@ def group_segments(
     segments: List[TimestampedText],
     scene_breaks: List[SceneBreak],
     max_gap: float = 2.0,
+    remove_ads: bool = True,
 ) -> List[List[TimestampedText]]:
     """Склеивает сегменты транскрипции в «мысли» — законченные истории.
 
     Соседние реплики объединяются, пока пауза между ними мала и нет смены
     сцены. Большая пауза или смена сцены — граница мысли. Длина мысли
     ничем не ограничена — границы ставят только паузы и сцены.
+    Рекламные сегменты (is_ad) при remove_ads=True разрывают мысль и
+    выкидываются из клипов.
     """
     scene_times = sorted(s.time for s in scene_breaks)
     groups: List[List[TimestampedText]] = []
@@ -119,6 +150,11 @@ def group_segments(
         return False
 
     for seg in segments:
+        if remove_ads and seg.is_ad:
+            if current:
+                groups.append(current)
+                current = []
+            continue
         if current:
             if _break_here(current[-1].end, seg.start):
                 groups.append(current)
@@ -154,6 +190,7 @@ def generate_candidates(
     min_duration: float = 4.0,
     max_duration: float = 180.0,
     max_gap: float = 2.0,
+    remove_ads: bool = True,
 ) -> List[ClipCandidate]:
     """Строит список кандидатов: базой служат «мысли» из сегментов Whisper.
 
@@ -167,7 +204,9 @@ def generate_candidates(
     boundaries = sorted(set(round(b, 2) for b in boundaries))
 
     candidates: List[ClipCandidate] = []
-    for group in group_segments(text_segments, scene_breaks, max_gap):
+    for group in group_segments(text_segments, scene_breaks, max_gap, remove_ads):
+        if remove_ads and any(s.is_ad for s in group):
+            continue
         start, end = group[0].start, group[-1].end
         # Расширяем до минимальной длины, притягивая границы к тишине/сценам
         if end - start < min_duration:
