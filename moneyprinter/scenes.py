@@ -19,7 +19,8 @@ def _detect_ffmpeg(path: str, duration: float, threshold: float = 0.35) -> List[
     """Scene detection через ffmpeg: анализирует stderr-вывод showinfo."""
     stderr = run_with_progress(
         [
-            "ffmpeg", "-v", "info", "-i", str(path),
+            "ffmpeg", "-v", "info", "-hwaccel", "auto",
+            "-i", str(path),
             "-filter:v", f"select='gt(scene,{threshold})',showinfo",
             "-f", "null", "-",
         ],
