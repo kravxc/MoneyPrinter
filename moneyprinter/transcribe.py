@@ -13,6 +13,8 @@ import subprocess
 import sys
 from typing import List, Optional
 
+from tqdm import tqdm
+
 from .models import TimestampedText
 
 _MISSING_HINT = (
@@ -130,6 +132,7 @@ def _transcribe_faster_whisper(
     model_name: str,
     device: str,
     language: Optional[str],
+    duration: Optional[float] = None,
 ) -> List[TimestampedText]:
     try:
         from faster_whisper import WhisperModel
@@ -148,24 +151,39 @@ def _transcribe_faster_whisper(
         if language:
             kwargs["language"] = language
         segments_iter, _ = model.transcribe(audio_path, **kwargs)
+
+        bar = tqdm(
+            total=duration if duration and duration > 0 else None,
+            desc="Транскрипция",
+            unit="s",
+            disable=False,
+        )
         segments: List[TimestampedText] = []
-        for seg in segments_iter:
-            text = (seg.text or "").strip()
-            if not text:
-                continue
-            segments.append(
-                TimestampedText(
-                    start=float(seg.start),
-                    end=float(seg.end),
-                    text=text,
-                    no_speech_prob=float(getattr(seg, "no_speech_prob", 0.0)),
+        try:
+            for seg in segments_iter:
+                if duration and duration > 0:
+                    bar.n = min(float(seg.end), duration)
+                    bar.refresh()
+                else:
+                    bar.update(1)
+                text = (seg.text or "").strip()
+                if not text:
+                    continue
+                segments.append(
+                    TimestampedText(
+                        start=float(seg.start),
+                        end=float(seg.end),
+                        text=text,
+                        no_speech_prob=float(getattr(seg, "no_speech_prob", 0.0)),
+                    )
                 )
-            )
+        finally:
+            bar.close()
         return segments
     except Exception as exc:
         if device == "cuda":
             print(f"[warn] Ошибка CUDA ({exc}) — повторяю на CPU")
-            return _transcribe_faster_whisper(audio_path, model_name, "cpu", language)
+            return _transcribe_faster_whisper(audio_path, model_name, "cpu", language, duration)
         raise
 
 
@@ -209,10 +227,11 @@ def transcribe(
     device: str = "auto",
     language: Optional[str] = None,
     auto_install: bool = True,
+    duration: Optional[float] = None,
 ) -> List[TimestampedText]:
     """Транскрибирует аудио, возвращает сегменты с таймкодами."""
     if _ensure_faster_whisper(auto_install):
-        return _transcribe_faster_whisper(audio_path, model_name, device, language)
+        return _transcribe_faster_whisper(audio_path, model_name, device, language, duration)
     try:
         return _transcribe_openai_whisper(audio_path, model_name, device, language)
     except Exception as exc:

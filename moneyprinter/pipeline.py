@@ -120,6 +120,7 @@ def process(cfg: Config) -> PipelineResult:
                     device=cfg.device,
                     language=cfg.language,
                     auto_install=cfg.auto_install,
+                    duration=info.duration,
                 )
             except transcribe_mod.TranscriptionError as exc:
                 print(f"[warn] Транскрипция недоступна ({exc}). Использую эвристики без текста.")
