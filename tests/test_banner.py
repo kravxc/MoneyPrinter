@@ -1,6 +1,7 @@
 import numpy as np
 
 from moneyprinter.banner import (
+    _expand_and_merge,
     choose_interval,
     is_banner_text,
     mark_segments_by_ranges,
@@ -40,9 +41,32 @@ def test_mark_segments_by_ranges_tolerance():
 
 def test_choose_interval_caps_frames():
     # очень длинное видео → интервал растёт, чтобы кадров было не больше лимита
-    assert choose_interval(3600.0) >= 3600.0 / 300
-    assert choose_interval(60.0) == 10.0
-    assert choose_interval(60.0) <= 10.0 + 1e-9
+    assert choose_interval(3600.0) >= 3600.0 / 900
+    assert choose_interval(3600.0) <= 6.0
+    assert choose_interval(60.0) == 5.0
+
+
+def test_expand_and_merge_covers_gaps_between_hits():
+    # хиты на 100 и 130 с шагом 10 → расширение ±15 и слияние в один интервал
+    ranges = _expand_and_merge([100.0, 130.0], interval_sec=10.0, duration=1000.0)
+    assert len(ranges) == 1
+    assert ranges[0][0] == 85.0
+    assert ranges[0][1] == 145.0
+
+
+def test_expand_and_merge_separates_distant_hits():
+    ranges = _expand_and_merge([10.0, 400.0], interval_sec=10.0, duration=1000.0)
+    assert len(ranges) == 2
+
+
+def test_expand_and_merge_clamps_to_video():
+    ranges = _expand_and_merge([5.0], interval_sec=10.0, duration=100.0)
+    assert ranges[0][0] == 0.0
+    assert ranges[0][1] == 20.0
+
+
+def test_expand_and_merge_empty():
+    assert _expand_and_merge([], interval_sec=10.0, duration=100.0) == []
 
 
 def test_mark_segments_by_ranges_no_ranges():
