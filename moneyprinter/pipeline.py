@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -33,11 +34,12 @@ class Config:
     blur_bg: bool = True
     story_gap: float = 2.0
     whisper_model: str = "base"
-    device: str = "cpu"
+    device: str = "auto"
     language: Optional[str] = None
     scene_threshold: float = 27.0
     llm_model: Optional[str] = None
     llm_url: Optional[str] = None
+    jobs: int = 0  # 0 = все ядра CPU
     keep_audio: bool = False  # не используется сейчас, задел на будущее
     temp_dir: Optional[str] = None
 
@@ -79,6 +81,7 @@ def process(cfg: Config) -> PipelineResult:
 
     info = media.probe(input_path)
     result = PipelineResult(input_path=input_path, duration=info.duration)
+    jobs = cfg.jobs or os.cpu_count() or 1
 
     with tempfile.TemporaryDirectory(prefix="moneyprinter_") as tmp:
         tmp = cfg.temp_dir or tmp
@@ -150,41 +153,50 @@ def process(cfg: Config) -> PipelineResult:
         candidates = score_mod.non_max_suppress(candidates)
         picked = score_mod.pick_top(candidates, max_clips=cfg.max_clips, min_score=cfg.min_score)
 
-        # 6) Нарезка
-        bar = tqdm(total=sum(c.duration for c in picked), desc="Нарезка", unit="s")
-        offset = 0.0
-        for i, cand in enumerate(picked, start=1):
+        # 6) Нарезка (параллельно, чтобы задействовать все ядра CPU)
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _cut_worker(cand: ClipCandidate, index: int, prefix: float):
+            out_name = f"clip_{index:02d}_s{cand.start:.1f}_e{cand.end:.1f}.mp4"
+            out_path = str(out_dir / out_name)
             if cfg.vertical:
-                out_name = f"clip_{i:02d}_s{cand.start:.1f}_e{cand.end:.1f}.mp4"
                 cutting.make_vertical(
-                    input_path,
-                    cand,
-                    str(out_dir / out_name),
-                    blur_bg=cfg.blur_bg,
-                    bar=bar,
-                    offset=offset,
+                    input_path, cand, out_path, blur_bg=cfg.blur_bg, bar=bar, offset=prefix
                 )
             else:
-                out_name = f"clip_{i:02d}_s{cand.start:.1f}_e{cand.end:.1f}.mp4"
-                cutting.cut_clip(input_path, cand, str(out_dir / out_name), bar=bar, offset=offset)
-            offset += cand.duration
+                cutting.cut_clip(input_path, cand, out_path, bar=bar, offset=prefix)
+            return cand, out_name, out_path
 
-            result.clips.append(
-                ClipResult(
-                    path=str(out_dir / out_name),
-                    start=cand.start,
-                    end=cand.end,
-                    duration=cand.duration,
-                    score=cand.total_score,
-                    text=cand.text,
-                    reason=cand.reason,
-                    vertical=cfg.vertical,
+        bar = tqdm(total=sum(c.duration for c in picked), desc="Нарезка", unit="s")
+        prefixes = []
+        acc = 0.0
+        for c in picked:
+            prefixes.append(acc)
+            acc += c.duration
+
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            futures = [
+                pool.submit(_cut_worker, cand, i, prefixes[i - 1])
+                for i, cand in enumerate(picked, start=1)
+            ]
+            for fut in as_completed(futures):
+                cand, out_name, out_path = fut.result()
+                result.clips.append(
+                    ClipResult(
+                        path=out_path,
+                        start=cand.start,
+                        end=cand.end,
+                        duration=cand.duration,
+                        score=cand.total_score,
+                        text=cand.text,
+                        reason=cand.reason,
+                        vertical=cfg.vertical,
+                    )
                 )
-            )
-            print(
-                f"  ✓ {out_name}  [{cand.start:7.1f}s → {cand.end:7.1f}s]  "
-                f"score={cand.total_score:.2f}  «{cand.text[:60]}»"
-            )
+                print(
+                    f"  ✓ {out_name}  [{cand.start:7.1f}s → {cand.end:7.1f}s]  "
+                    f"score={cand.total_score:.2f}  «{cand.text[:60]}»"
+                )
         bar.close()
 
         # 7) Отчёт

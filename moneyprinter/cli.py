@@ -27,7 +27,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--horizontal", action="store_true", help="Не конвертировать в 9:16 (оставить пропорции)")
     p_run.add_argument("--crop", action="store_true", help="Вертикаль кадрированием вместо размытого фона")
     p_run.add_argument("--whisper-model", default="base", help="Модель Whisper: tiny/base/small/medium/large")
-    p_run.add_argument("--device", default="cpu", help="cpu или cuda")
+    p_run.add_argument("--device", default="auto", help="auto/cpu/cuda (auto = cpu; cuda ускорит на NVIDIA GPU)")
+    p_run.add_argument("--jobs", type=int, default=0, help="Сколько клипов нарезать параллельно (0 = все ядра)")
     p_run.add_argument("--language", default=None, help="Язык для транскрипции (напр. ru, en)")
     p_run.add_argument("--llm", default=None, metavar="MODEL", help="Локальная LLM для ранжирования (напр. llama3.2)")
     p_run.add_argument("--llm-url", default=None, help="Ollama base url (default: http://localhost:11434)")
@@ -70,6 +71,7 @@ def main(argv=None) -> int:
             scene_threshold=args.scene_threshold,
             llm_model=args.llm,
             llm_url=args.llm_url,
+            jobs=args.jobs,
         )
         result = process(cfg)
         print(f"\nГотово: {len(result.clips)} клипов → {args.output}")

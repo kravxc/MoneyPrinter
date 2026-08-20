@@ -23,13 +23,13 @@ def cut_clip(
     out_path: str,
     video_codec: str = "libx264",
     crf: int = 20,
-    preset: str = "fast",
+    preset: str = "veryfast",
     bar=None,
     offset: float = 0.0,
 ) -> str:
     """Режет фрагмент [start, end] без изменения пропорций."""
     cmd = [
-        "ffmpeg", "-v", "error", "-y",
+        "ffmpeg", "-v", "error", "-y", "-hwaccel", "auto",
         "-i", str(input_path),
         "-ss", _sec(candidate.start),
         "-to", _sec(candidate.end),
@@ -51,7 +51,7 @@ def make_vertical(
     width: int = TARGET_W,
     height: int = TARGET_H,
     crf: int = 20,
-    preset: str = "fast",
+    preset: str = "veryfast",
     bar=None,
     offset: float = 0.0,
 ) -> str:
@@ -75,7 +75,7 @@ def make_vertical(
         )
 
     cmd = [
-        "ffmpeg", "-v", "error", "-y",
+        "ffmpeg", "-v", "error", "-y", "-hwaccel", "auto",
         "-i", str(input_path),
         "-ss", _sec(candidate.start),
         "-to", _sec(candidate.end),
