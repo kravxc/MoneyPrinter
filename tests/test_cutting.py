@@ -3,7 +3,7 @@ import subprocess
 
 import pytest
 
-from moneyprinter.cutting import cut_clip, make_vertical
+from moneyprinter.cutting import _crop_filters, cut_clip, make_vertical
 from moneyprinter.media import probe
 from moneyprinter.models import ClipCandidate
 
@@ -59,3 +59,27 @@ def test_make_vertical_crop(sample_video, tmp_path):
     make_vertical(sample_video, cand, out, blur_bg=False)
     info = probe(out)
     assert info.width == 1080 and info.height == 1920
+
+
+def test_crop_filters():
+    assert _crop_filters({"bottom": 0.15}) == "crop=iw:ih*0.8500:0:0"
+    assert _crop_filters({"top": 0.1}) == "crop=iw:ih*0.9000:0:ih*0.1000"
+    assert _crop_filters(None) == ""
+    assert _crop_filters({}) == ""
+
+
+def test_make_vertical_with_banner_crop(sample_video, tmp_path):
+    out = str(tmp_path / "vert_bcrop.mp4")
+    cand = ClipCandidate(start=1.0, end=3.0)
+    make_vertical(sample_video, cand, out, blur_bg=True, crop_edges={"bottom": 0.15})
+    info = probe(out)
+    assert info.width == 1080 and info.height == 1920
+
+
+def test_cut_clip_with_banner_crop(sample_video, tmp_path):
+    out = str(tmp_path / "cut_bcrop.mp4")
+    cand = ClipCandidate(start=1.0, end=3.0)
+    cut_clip(sample_video, cand, out, crop_edges={"bottom": 0.15})
+    info = probe(out)
+    assert 1.5 < info.duration < 2.5
+    assert info.height < 360  # низ срезан
