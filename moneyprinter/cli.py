@@ -31,6 +31,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--jobs", type=int, default=0, help="Сколько клипов нарезать параллельно (0 = все ядра)")
     p_run.add_argument("--no-auto-install", action="store_true", help="Не доустанавливать AI-зависимости автоматически")
     p_run.add_argument("--keep-ads", action="store_true", help="Не вырезать визуальные баннеры казино/беттинга из клипов")
+    p_run.add_argument("--ocr-interval", type=float, default=None, help="Шаг сэмплирования кадров для детекции банеров, сек (меньше = точнее, но дольше)")
     p_run.add_argument("--language", default=None, help="Язык для транскрипции (напр. ru, en)")
     p_run.add_argument("--llm", default=None, metavar="MODEL", help="Локальная LLM для ранжирования (напр. llama3.2)")
     p_run.add_argument("--llm-url", default=None, help="Ollama base url (default: http://localhost:11434)")
@@ -76,6 +77,7 @@ def main(argv=None) -> int:
             jobs=args.jobs,
             auto_install=not args.no_auto_install,
             remove_ads=not args.keep_ads,
+            ocr_interval=args.ocr_interval,
         )
         result = process(cfg)
         print(f"\nГотово: {len(result.clips)} клипов → {args.output}")

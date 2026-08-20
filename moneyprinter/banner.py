@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -17,10 +16,7 @@ from typing import List, Optional, Tuple
 
 from tqdm import tqdm
 
-from .media import run_with_progress
 from .models import TimestampedText
-
-_SHOWINFO_RE = re.compile(r"pts_time:(\d+(?:\.\d+)?)")
 
 # Маркеры казино/беттинга для OCR-текста баннеров (lowercase-подстроки)
 BANNER_KEYWORDS = [
@@ -35,8 +31,8 @@ BANNER_KEYWORDS = [
 ]
 
 # Максимальное число кадров для OCR-анализа (интервал подбирается под него)
-MAX_OCR_FRAMES = 300
-DEFAULT_INTERVAL = 10.0
+MAX_OCR_FRAMES = 900
+DEFAULT_INTERVAL = 5.0
 
 
 def choose_interval(duration: float) -> float:
@@ -80,28 +76,50 @@ def _get_engine():
 
 
 def sample_frames(
-    input_path: str, interval_sec: float, out_dir: str, duration: float
+    input_path: str,
+    interval_sec: float,
+    out_dir: str,
+    duration: float,
+    jobs: int = 4,
 ) -> List[Tuple[float, str]]:
-    """Извлекает кадр каждые interval_sec; возвращает [(time, path)]."""
-    stderr = run_with_progress(
-        [
-            "ffmpeg", "-v", "info", "-hwaccel", "auto",
-            "-skip_frame", "nokey",  # декодим только ключевые кадры — в ~30 раз быстрее
-            "-i", str(input_path),
-            "-vf", f"fps=1/{interval_sec},showinfo",
-            "-q:v", "4",
-            os.path.join(out_dir, "frame_%06d.jpg"),
-        ],
-        total=duration,
-        desc="Баннеры (кадры)",
-    )
+    """Извлекает кадр каждые interval_sec через быстрый seek (-ss).
+
+    Возвращает [(time, path)]. Каждый кадр — отдельный лёгкий вызов ffmpeg
+    (декодируется 1 кадр), выполняется параллельно на нескольких ядрах,
+    поэтому длинные ролики сэмплируются за минуты, а не за часы.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
     times: List[float] = []
-    for line in stderr.splitlines():
-        m = _SHOWINFO_RE.search(line)
-        if m and "n:" in line:
-            times.append(float(m.group(1)))
-    paths = [os.path.join(out_dir, f"frame_{i + 1:06d}.jpg") for i in range(len(times))]
-    return list(zip(times, paths))
+    t = 0.0
+    while t < duration - 1e-6:
+        times.append(t)
+        t += interval_sec
+    if not times:
+        times = [0.0]
+
+    def _extract(args):
+        idx, sec = args
+        out = os.path.join(out_dir, f"frame_{idx + 1:06d}.jpg")
+        subprocess.check_call(
+            [
+                "ffmpeg", "-v", "error", "-y",
+                "-ss", f"{sec:.3f}",
+                "-i", str(input_path),
+                "-frames:v", "1",
+                "-vf", "scale=640:-2",
+                "-q:v", "4",
+                out,
+            ]
+        )
+        return (sec, out)
+
+    with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
+        frames = list(
+            tqdm(pool.map(_extract, enumerate(times)), total=len(times),
+                 desc="Баннеры (кадры)", unit="кадр")
+        )
+    return frames
 
 
 def ocr_text(path: str) -> str:
@@ -124,34 +142,51 @@ def is_banner_text(text: str) -> bool:
     return any(k in low for k in BANNER_KEYWORDS)
 
 
+def _expand_and_merge(
+    hits: List[float], interval_sec: float, duration: float
+) -> List[Tuple[float, float]]:
+    """Расширяет каждый хит на ±interval*1.5 и сливает соседние окна."""
+    exp = interval_sec * 1.5
+    windows = [(max(0.0, t - exp), min(duration, t + exp)) for t in hits]
+    windows.sort()
+    ranges: List[Tuple[float, float]] = []
+    if not windows:
+        return ranges
+    cur_start, cur_end = windows[0]
+    for s, e in windows[1:]:
+        if s <= cur_end + interval_sec:
+            cur_end = max(cur_end, e)
+        else:
+            ranges.append((cur_start, cur_end))
+            cur_start, cur_end = s, e
+    ranges.append((cur_start, cur_end))
+    return ranges
+
+
 def detect_banner_ranges(
     input_path: str,
     duration: float,
     interval_sec: Optional[float] = None,
+    jobs: int = 4,
 ) -> List[Tuple[float, float]]:
-    """Возвращает интервалы времени, где на экране рекламный баннер."""
+    """Возвращает интервалы времени, где на экране рекламный банер.
+
+    Каждый подтверждённый кадр расширяется на ±interval*1.5 (чтобы закрыть
+    промежутки между сэмплами и пропущенные OCR кадры), затем окна сливаются.
+    Границы консервативнее, чем сам хит: лучше вырезать чуть лишнего,
+    чем оставить банер в клипе.
+    """
     if interval_sec is None:
         interval_sec = choose_interval(duration)
 
     with tempfile.TemporaryDirectory(prefix="moneyprinter_banner_") as td:
-        frames = sample_frames(input_path, interval_sec, td, duration)
+        frames = sample_frames(input_path, interval_sec, td, duration, jobs)
         hits: List[float] = []
         for t, path in tqdm(frames, desc="OCR баннеров", unit="кадр"):
             if is_banner_text(ocr_text(path)):
                 hits.append(t)
 
-    if not hits:
-        return []
-    hits.sort()
-    ranges: List[Tuple[float, float]] = []
-    start = prev = hits[0]
-    for t in hits[1:]:
-        if t - prev > interval_sec * 2:
-            ranges.append((start, prev + interval_sec))
-            start = t
-        prev = t
-    ranges.append((start, prev + interval_sec))
-    return ranges
+    return _expand_and_merge(hits, interval_sec, duration)
 
 
 def mark_segments_by_ranges(

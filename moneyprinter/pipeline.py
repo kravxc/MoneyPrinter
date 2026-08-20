@@ -33,7 +33,8 @@ class Config:
     vertical: bool = True
     blur_bg: bool = True
     story_gap: float = 2.0
-    remove_ads: bool = True  # вырезать рекламу/казино/беттинг из клипов
+    remove_ads: bool = True  # вырезать банеры казино/беттинга из клипов
+    ocr_interval: Optional[float] = None  # шаг сэмплирования кадров для OCR, сек
     whisper_model: str = "base"
     device: str = "auto"
     language: Optional[str] = None
@@ -133,7 +134,9 @@ def process(cfg: Config) -> PipelineResult:
             from . import banner as banner_mod
 
             if banner_mod.ensure_ocr(cfg.auto_install):
-                banner_ranges = banner_mod.detect_banner_ranges(input_path, info.duration)
+                banner_ranges = banner_mod.detect_banner_ranges(
+                    input_path, info.duration, cfg.ocr_interval, jobs
+                )
                 if banner_ranges:
                     banner_mod.mark_segments_by_ranges(text_segments, banner_ranges)
                     n_ads = sum(1 for s in text_segments if s.is_ad)
