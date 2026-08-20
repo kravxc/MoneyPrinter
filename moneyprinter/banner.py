@@ -122,24 +122,119 @@ def sample_frames(
     return frames
 
 
-def ocr_text(path: str) -> str:
-    """Распознаёт текст на кадре, возвращает lowercase-строку."""
+def ocr_result(path: str) -> List[Tuple[str, Tuple[float, float, float, float]]]:
+    """Распознаёт текст на кадре.
+
+    Возвращает [(text, box)], где box = (x0, y0, x1, y1) в пикселях кадра.
+    """
     try:
         result, _ = _get_engine()(str(path))
     except Exception:
-        return ""
+        return []
     if not result:
-        return ""
-    texts: List[str] = []
+        return []
+    out: List[Tuple[str, Tuple[float, float, float, float]]] = []
     for item in result:
-        if isinstance(item, (list, tuple)) and len(item) >= 2 and isinstance(item[1], str):
-            texts.append(item[1])
-    return " ".join(texts).lower()
+        if not isinstance(item, (list, tuple)) or len(item) < 2:
+            continue
+        text = item[1] if isinstance(item[1], str) else ""
+        box = item[0]
+        xs = ys = None
+        try:
+            if isinstance(box, (list, tuple)) and box:
+                points = [p for p in box if isinstance(p, (list, tuple)) and len(p) >= 2]
+                if points:
+                    xs = [float(p[0]) for p in points]
+                    ys = [float(p[1]) for p in points]
+                else:
+                    flat = [float(v) for v in box]
+                    xs, ys = flat[0::2], flat[1::2]
+        except (TypeError, ValueError):
+            xs = ys = None
+        if text and xs and ys:
+            out.append((text, (min(xs), min(ys), max(xs), max(ys))))
+    return out
+
+
+def ocr_text(path: str) -> str:
+    """Распознаёт текст на кадре, возвращает lowercase-строку."""
+    return " ".join(t for t, _ in ocr_result(path)).lower()
 
 
 def is_banner_text(text: str) -> bool:
     low = text.lower()
     return any(k in low for k in BANNER_KEYWORDS)
+
+
+def _boxes_to_crop(
+    boxes: List[Tuple[float, float, float, float]],
+    img_w: float,
+    img_h: float,
+    margin: float = 0.04,
+) -> dict:
+    """По позициям банер-текста вычисляет, какой край и насколько кадрировать.
+
+    Возвращает dict вида {"bottom": 0.15}. Значения от 0.05 до 0.4.
+    Горизонтальный банер (верх/низ кадра) кадрируется только сверху/снизу;
+    боковые края учитываются лишь если банер вертикальный.
+    """
+    if not boxes or img_w <= 0 or img_h <= 0:
+        return {}
+    h_edges: dict = {}
+    v_edges: dict = {}
+    for x0, y0, x1, y1 in boxes:
+        w = (x1 - x0) / img_w
+        yc = (y0 + y1) / 2 / img_h
+        xc = (x0 + x1) / 2 / img_w
+        if yc >= 0.5:
+            h_edges["bottom"] = max(h_edges.get("bottom", 0.0), 1.0 - (y1 / img_h) + margin)
+        else:
+            h_edges["top"] = max(h_edges.get("top", 0.0), (y0 / img_h) + margin)
+        if w < 0.6:
+            if xc < 0.5:
+                v_edges["left"] = max(v_edges.get("left", 0.0), x0 / img_w + margin)
+            else:
+                v_edges["right"] = max(v_edges.get("right", 0.0), 1.0 - (x1 / img_w) + margin)
+    edges = dict(h_edges)
+    if not h_edges:  # вертикальный банер — смотрим бока
+        edges.update(v_edges)
+    return {e: round(min(max(r, 0.05), 0.4), 3) for e, r in edges.items() if r >= 0.05}
+
+
+def detect_banner_crop(
+    input_path: str,
+    duration: float,
+    video_width: int,
+    video_height: int,
+    interval_sec: Optional[float] = None,
+    jobs: int = 4,
+) -> dict:
+    """Определяет кадрирование, убирающее банер по размеру кадра.
+
+    Хронометраж не меняется: банер выносится за кадр срезом края.
+    Возвращает {"bottom": 0.15} или пустой dict, если банер не найден.
+    """
+    if interval_sec is None:
+        interval_sec = choose_interval(duration)
+
+    # кадры извлекаются шириной 640 — пересчитываем высоту
+    img_w = 640.0
+    img_h = float(int(640.0 * video_height / max(1, video_width) / 2) * 2)
+    if img_h <= 0:
+        img_h = 360.0
+
+    banner_boxes: List[Tuple[float, float, float, float]] = []
+    with tempfile.TemporaryDirectory(prefix="moneyprinter_banner_") as td:
+        frames = sample_frames(input_path, interval_sec, td, duration, jobs)
+        for t, path in tqdm(frames, desc="OCR баннеров", unit="кадр"):
+            for text, box in ocr_result(path):
+                if is_banner_text(text):
+                    banner_boxes.append(box)
+
+    if not banner_boxes:
+        return {}
+    crop = _boxes_to_crop(banner_boxes, img_w, img_h)
+    return crop
 
 
 def _expand_and_merge(

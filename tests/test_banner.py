@@ -1,6 +1,7 @@
 import numpy as np
 
 from moneyprinter.banner import (
+    _boxes_to_crop,
     _expand_and_merge,
     choose_interval,
     is_banner_text,
@@ -67,6 +68,24 @@ def test_expand_and_merge_clamps_to_video():
 
 def test_expand_and_merge_empty():
     assert _expand_and_merge([], interval_sec=10.0, duration=100.0) == []
+
+
+def test_boxes_to_crop_bottom():
+    # банер в нижней части кадра 640x360 → кадрируем низ
+    crop = _boxes_to_crop([(100.0, 300.0, 500.0, 350.0)], 640.0, 360.0)
+    assert "bottom" in crop
+    assert 0.05 <= crop["bottom"] <= 0.15
+
+
+def test_boxes_to_crop_top():
+    crop = _boxes_to_crop([(100.0, 10.0, 500.0, 40.0)], 640.0, 360.0)
+    assert "top" in crop
+    assert 0.05 <= crop["top"] <= 0.15
+
+
+def test_boxes_to_crop_empty():
+    assert _boxes_to_crop([], 640.0, 360.0) == {}
+    assert _boxes_to_crop([(10.0, 10.0, 20.0, 20.0)], 0.0, 360.0) == {}
 
 
 def test_mark_segments_by_ranges_no_ranges():

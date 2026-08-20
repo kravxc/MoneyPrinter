@@ -128,22 +128,21 @@ def process(cfg: Config) -> PipelineResult:
             except transcribe_mod.TranscriptionError as exc:
                 print(f"[warn] Транскрипция недоступна ({exc}). Использую эвристики без текста.")
 
-        # 3.5) Детекция визуальных рекламных баннеров (казино/беттинг) через OCR
-        banner_ranges: List = []
-        if cfg.remove_ads and text_segments:
+        # 3.5) Детекция визуальных рекламных баннеров (казино/беттинг) через OCR.
+        #      Банер не скипается по времени — кадр чуть кадрируется по размеру,
+        #      чтобы банер оказался за краем, хронометраж сохраняется.
+        crop_edges: dict = {}
+        if cfg.remove_ads:
             from . import banner as banner_mod
 
             if banner_mod.ensure_ocr(cfg.auto_install):
-                banner_ranges = banner_mod.detect_banner_ranges(
-                    input_path, info.duration, cfg.ocr_interval, jobs
+                crop_edges = banner_mod.detect_banner_crop(
+                    input_path, info.duration, info.width, info.height,
+                    cfg.ocr_interval, jobs,
                 )
-                if banner_ranges:
-                    banner_mod.mark_segments_by_ranges(text_segments, banner_ranges)
-                    n_ads = sum(1 for s in text_segments if s.is_ad)
-                    print(
-                        f"[i] Рекламные баннеры на {len(banner_ranges)} участках — "
-                        f"затронуто {n_ads} фрагментов, они будут вырезаны"
-                    )
+                if crop_edges:
+                    parts = ", ".join(f"{e} {int(r * 100)}%" for e, r in crop_edges.items())
+                    print(f"[i] Банер у края кадра — кадрирую: {parts} (хронометраж сохраняется)")
                 else:
                     print("[i] Рекламных баннеров не обнаружено")
             else:
@@ -161,8 +160,6 @@ def process(cfg: Config) -> PipelineResult:
                 min_duration=cfg.min_duration,
                 max_duration=cfg.max_duration,
                 max_gap=cfg.story_gap,
-                remove_ads=cfg.remove_ads,
-                banner_ranges=banner_ranges,
             )
         else:
             candidates = _energy_only_candidates(
@@ -190,10 +187,13 @@ def process(cfg: Config) -> PipelineResult:
             out_path = str(out_dir / out_name)
             if cfg.vertical:
                 cutting.make_vertical(
-                    input_path, cand, out_path, blur_bg=cfg.blur_bg, bar=bar, offset=prefix
+                    input_path, cand, out_path,
+                    blur_bg=cfg.blur_bg, bar=bar, offset=prefix, crop_edges=crop_edges,
                 )
             else:
-                cutting.cut_clip(input_path, cand, out_path, bar=bar, offset=prefix)
+                cutting.cut_clip(
+                    input_path, cand, out_path, bar=bar, offset=prefix, crop_edges=crop_edges,
+                )
             return cand, out_name, out_path
 
         bar = tqdm(total=sum(c.duration for c in picked), desc="Нарезка", unit="s")

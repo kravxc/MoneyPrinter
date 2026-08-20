@@ -30,7 +30,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--device", default="auto", help="auto/cpu/cuda (auto = cpu; cuda ускорит на NVIDIA GPU)")
     p_run.add_argument("--jobs", type=int, default=0, help="Сколько клипов нарезать параллельно (0 = все ядра)")
     p_run.add_argument("--no-auto-install", action="store_true", help="Не доустанавливать AI-зависимости автоматически")
-    p_run.add_argument("--keep-ads", action="store_true", help="Не вырезать визуальные баннеры казино/беттинга из клипов")
+    p_run.add_argument("--keep-ads", action="store_true", help="Не кадрировать кадр для удаления банеров казино/беттинга")
     p_run.add_argument("--ocr-interval", type=float, default=None, help="Шаг сэмплирования кадров для детекции банеров, сек (меньше = точнее, но дольше)")
     p_run.add_argument("--language", default=None, help="Язык для транскрипции (напр. ru, en)")
     p_run.add_argument("--llm", default=None, metavar="MODEL", help="Локальная LLM для ранжирования (напр. llama3.2)")
