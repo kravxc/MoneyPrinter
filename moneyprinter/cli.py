@@ -49,7 +49,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_login = sub.add_parser("login", help="Войти в TikTok и сохранить cookies для автопостинга")
     p_login.add_argument("--cookie", default=upload_mod.DEFAULT_COOKIE_FILE, help="Куда сохранить cookies")
-    p_login.add_argument("--headed", action="store_true", help="Открыть браузер видимым (нужно для ручного входа)")
+    p_login.add_argument("--profile", default=upload_mod.DEFAULT_PROFILE_DIR, help="Каталог persistent-профиля браузера (для входа через Google)")
+    p_login.add_argument("--force-new", action="store_true", help="Стереть старый профиль и войти заново")
 
     p_publish = sub.add_parser("publish", help="Выложить видео в TikTok (один файл или папку)")
     p_publish.add_argument("path", help="Видеофайл или папка с клипами")
@@ -105,7 +106,9 @@ def _collect_videos(path: str) -> list:
 
 
 def _cmd_login(args: argparse.Namespace) -> int:
-    upload_mod.interactive_login(path=args.cookie, headed=args.headed or True)
+    upload_mod.interactive_login(
+        path=args.cookie, profile_dir=args.profile, force_new=args.force_new
+    )
     return 0
 
 
@@ -197,6 +200,10 @@ def _cmd_uninstall_scheduler(args):
 def main(argv=None) -> int:
     args = _build_parser().parse_args(argv)
     try:
+        # Команды, работающие с TikTok, сами обеспечат наличие Playwright
+        if args.command in ("login", "publish", "run-schedule", "publish-next"):
+            upload_mod.ensure_playwright(auto_install=True)
+
         if args.command == "probe":
             return _cmd_probe(args)
         if args.command == "login":
