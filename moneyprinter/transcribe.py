@@ -109,37 +109,6 @@ def _cuda_libs_missing() -> bool:
         return True
 
 
-def _ensure_cuda_libs() -> bool:
-    """Доустанавливает cuBLAS/cuDNN (pip) и добавляет их bin в PATH."""
-    if not _cuda_libs_missing():
-        return True
-
-    print("[i] CUDA-библиотеки (cuBLAS/cuDNN) не найдены — устанавливаю через pip...")
-    try:
-        subprocess.check_call(
-            [
-                sys.executable, "-m", "pip", "install", "--quiet",
-                "nvidia-cublas-cu12", "nvidia-cudnn-cu12",
-            ]
-        )
-    except Exception:
-        return False
-
-    import glob
-    import site
-
-    for p in site.getsitepackages():
-        if sys.platform == "win32":
-            for d in glob.glob(os.path.join(p, "nvidia", "*", "bin")):
-                os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
-        else:
-            for d in glob.glob(os.path.join(p, "nvidia", "*", "lib")):
-                os.environ["LD_LIBRARY_PATH"] = (
-                    d + os.pathsep + os.environ.get("LD_LIBRARY_PATH", "")
-                )
-    return not _cuda_libs_missing()
-
-
 # --- Чанки аудио ------------------------------------------------------------
 
 def _make_chunks(
@@ -275,8 +244,8 @@ def _transcribe_faster_whisper(
         raise TranscriptionError(_MISSING_HINT) from None
 
     device = _resolve_device(device)
-    if device == "cuda" and not _ensure_cuda_libs():
-        print("[warn] CUDA-библиотеки недоступны — транскрипция на CPU")
+    if device == "cuda" and _cuda_libs_missing():
+        print("[warn] CUDA-библиотеки (cuBLAS/cuDNN) недоступны — транскрипция на CPU")
         device = "cpu"
 
     if device == "cpu" and jobs > 1 and duration and duration > CHUNK_MIN_DURATION:
