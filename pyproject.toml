@@ -21,11 +21,14 @@ dependencies = [
 transcribe = ["faster-whisper>=1.0"]
 scenes = ["scenedetect[opencv]>=0.6.4"]
 llm = ["ollama>=0.4"]
+# Автопостинг в TikTok через браузерную автоматизацию (Playwright)
+upload = ["playwright>=1.40"]
 dev = ["pytest>=7.0"]
 all = [
     "faster-whisper>=1.0",
     "scenedetect[opencv]>=0.6.4",
     "ollama>=0.4",
+    "playwright>=1.40",
     "pytest>=7.0",
 ]
 
