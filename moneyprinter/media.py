@@ -25,79 +25,43 @@ def run_with_progress(
 ) -> str:
     """Запускает ffmpeg с прогресс-баром по длительности.
 
-    - Прогресс пишется в временный файл (`-progress file`) — надёжно работает
-      и на Windows (в пайп ffmpeg буферизует вывод, и бар «замирает» на 0%).
-    - stderr читается в фоне, чтобы пайп не переполнился (дедлок).
+    - Добавляет `-progress pipe:1`, читает out_time_ms из stdout.
     - Если передан готовый `bar` (tqdm), использует его — удобно для единого
       бара на всю нарезку нескольких клипов.
     - Возвращает stderr (нужен для парсинга showinfo в детекции сцен).
     """
-    import os
-    import re
-    import tempfile
-    import threading
-    import time
-
     from tqdm import tqdm
 
-    fd, prog_path = tempfile.mkstemp(suffix=".txt", prefix="ffprogress_")
-    os.close(fd)
+    cmd = list(cmd) + ["-progress", "pipe:1", "-nostats"]
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+    except FileNotFoundError:
+        raise FFmpegError(f"Команда не найдена: {cmd[0]}. Установите ffmpeg.") from None
+
+    own = bar is None
+    if own:
+        bar = tqdm(total=total, desc=desc, unit="s", disable=disable or total <= 0)
 
     try:
-        cmd = list(cmd) + ["-progress", prog_path, "-nostats"]
-        try:
-            proc = subprocess.Popen(
-                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
-            )
-        except FileNotFoundError:
-            raise FFmpegError(f"Команда не найдена: {cmd[0]}. Установите ffmpeg.") from None
-
-        stderr_lines: list = []
-
-        def _drain_stderr():
-            try:
-                for line in proc.stderr:
-                    stderr_lines.append(line)
-            except Exception:
-                pass
-
-        reader = threading.Thread(target=_drain_stderr, daemon=True)
-        reader.start()
-
-        own = bar is None
-        if own:
-            bar = tqdm(total=total, desc=desc, unit="s", disable=disable or total <= 0)
-
-        out_re = re.compile(r"out_time_ms=(\d+)")
-        last_ms = -1
-        try:
-            while proc.poll() is None:
+        for line in proc.stdout:
+            if line.startswith("out_time_ms="):
                 try:
-                    with open(prog_path, "r", errors="replace") as f:
-                        data = f.read()
-                except OSError:
-                    data = ""
-                m = out_re.search(data)
-                if m:
-                    ms = int(m.group(1))
-                    if ms != last_ms:
-                        last_ms = ms
-                        bar.n = initial + min(ms / 1_000_000, max(total, 0.0))
-                        bar.refresh()
-                time.sleep(0.2)
-            reader.join(timeout=5)
-        finally:
-            if own:
-                bar.close()
+                    secs = int(line.split("=", 1)[1].strip()) / 1_000_000
+                except ValueError:
+                    continue
+                bar.n = initial + min(secs, max(total, 0.0))
+                bar.refresh()
+        leftover = proc.stdout.read()
     finally:
-        try:
-            os.unlink(prog_path)
-        except OSError:
-            pass
+        if own:
+            bar.close()
 
-    stderr = "".join(stderr_lines)
+    stderr = proc.stderr.read()
+    proc.wait()
     if proc.returncode != 0:
-        tail = stderr[-2000:]
+        tail = (stderr or leftover or "")[-2000:]
         raise FFmpegError(f"Команда завершилась с ошибкой {proc.returncode}:\n{tail}")
     return stderr
 

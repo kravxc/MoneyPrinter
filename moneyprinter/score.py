@@ -98,15 +98,12 @@ def group_segments(
     segments: List[TimestampedText],
     scene_breaks: List[SceneBreak],
     max_gap: float = 2.0,
-    remove_ads: bool = True,
 ) -> List[List[TimestampedText]]:
     """Склеивает сегменты транскрипции в «мысли» — законченные истории.
 
     Соседние реплики объединяются, пока пауза между ними мала и нет смены
     сцены. Большая пауза или смена сцены — граница мысли. Длина мысли
     ничем не ограничена — границы ставят только паузы и сцены.
-    Рекламные сегменты (is_ad) при remove_ads=True разрывают мысль и
-    выкидываются из клипов.
     """
     scene_times = sorted(s.time for s in scene_breaks)
     groups: List[List[TimestampedText]] = []
@@ -122,11 +119,6 @@ def group_segments(
         return False
 
     for seg in segments:
-        if remove_ads and seg.is_ad:
-            if current:
-                groups.append(current)
-                current = []
-            continue
         if current:
             if _break_here(current[-1].end, seg.start):
                 groups.append(current)
@@ -152,52 +144,6 @@ def _split_story(start: float, end: float, max_duration: float) -> List[tuple]:
     return parts
 
 
-def _trim_banner_overlap(
-    start: float, end: float, banner_ranges: List[tuple], duration: float, min_duration: float
-) -> Optional[tuple]:
-    """Сдвигает окно клипа в чистую зону, не режа хронометраж.
-
-    Банер выносится за границы клипа: окно целиком сдвигается влево
-    (заканчивается перед банером) или вправо (начинается после банера).
-    Длина окна сохраняется, если в исходнике хватает места; иначе берётся
-    максимально возможный чистый кусок. Если ничего не осталось — None.
-    """
-    dur = end - start
-    for _ in range(len(banner_ranges) + 1):
-        moved = False
-        for r0, r1 in banner_ranges:
-            if not (start < r1 and end > r0):
-                continue
-            # вариант влево: окно заканчивается прямо перед банером
-            a_start, a_end = max(0.0, r0 - dur), r0
-            # вариант вправо: окно начинается сразу после банера
-            b_start, b_end = r1, min(duration, r1 + dur)
-            a_len = max(0.0, a_end - a_start)
-            b_len = max(0.0, b_end - b_start)
-            a_full = a_len >= dur - 1e-9
-            b_full = b_len >= dur - 1e-9
-
-            if a_full and b_full:
-                if abs(a_start - start) <= abs(b_start - start):
-                    start, end = a_start, a_end
-                else:
-                    start, end = b_start, b_end
-            elif a_full:
-                start, end = a_start, a_end
-            elif b_full:
-                start, end = b_start, b_end
-            elif a_len >= b_len:
-                start, end = a_start, a_end
-            else:
-                start, end = b_start, b_end
-            moved = True
-        if not moved:
-            break
-        if end - start < min_duration * 0.5:
-            return None
-    return (start, end)
-
-
 def generate_candidates(
     energy_score: np.ndarray,
     energy_times: np.ndarray,
@@ -208,8 +154,6 @@ def generate_candidates(
     min_duration: float = 4.0,
     max_duration: float = 180.0,
     max_gap: float = 2.0,
-    remove_ads: bool = True,
-    banner_ranges: List[tuple] = (),
 ) -> List[ClipCandidate]:
     """Строит список кандидатов: базой служат «мысли» из сегментов Whisper.
 
@@ -223,9 +167,7 @@ def generate_candidates(
     boundaries = sorted(set(round(b, 2) for b in boundaries))
 
     candidates: List[ClipCandidate] = []
-    for group in group_segments(text_segments, scene_breaks, max_gap, remove_ads):
-        if remove_ads and any(s.is_ad for s in group):
-            continue
+    for group in group_segments(text_segments, scene_breaks, max_gap):
         start, end = group[0].start, group[-1].end
         # Расширяем до минимальной длины, притягивая границы к тишине/сценам
         if end - start < min_duration:
@@ -240,15 +182,6 @@ def generate_candidates(
                 continue
             if part_end > duration:
                 part_end = duration
-
-            # Не пускаем клип в зону рекламного банера: сдвигаем окно целиком
-            if remove_ads and banner_ranges:
-                trimmed = _trim_banner_overlap(
-                    part_start, part_end, banner_ranges, duration, min_duration
-                )
-                if trimmed is None:
-                    continue
-                part_start, part_end = trimmed
 
             # Энергия окна
             mask = (energy_times >= part_start) & (energy_times <= part_end)

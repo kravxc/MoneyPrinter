@@ -33,8 +33,6 @@ class Config:
     vertical: bool = True
     blur_bg: bool = True
     story_gap: float = 2.0
-    remove_ads: bool = True  # вырезать банеры казино/беттинга из клипов
-    ocr_interval: Optional[float] = None  # шаг сэмплирования кадров для OCR, сек
     whisper_model: str = "base"
     device: str = "auto"
     language: Optional[str] = None
@@ -123,30 +121,9 @@ def process(cfg: Config) -> PipelineResult:
                     language=cfg.language,
                     auto_install=cfg.auto_install,
                     duration=info.duration,
-                    jobs=jobs,
                 )
             except transcribe_mod.TranscriptionError as exc:
                 print(f"[warn] Транскрипция недоступна ({exc}). Использую эвристики без текста.")
-
-        # 3.5) Детекция визуальных рекламных баннеров (казино/беттинг) через OCR.
-        #      Банер не скипается по времени — кадр чуть кадрируется по размеру,
-        #      чтобы банер оказался за краем, хронометраж сохраняется.
-        crop_edges: dict = {}
-        if cfg.remove_ads:
-            from . import banner as banner_mod
-
-            if banner_mod.ensure_ocr(cfg.auto_install):
-                crop_edges = banner_mod.detect_banner_crop(
-                    input_path, info.duration, info.width, info.height,
-                    cfg.ocr_interval, jobs,
-                )
-                if crop_edges:
-                    parts = ", ".join(f"{e} {int(r * 100)}%" for e, r in crop_edges.items())
-                    print(f"[i] Банер у края кадра — кадрирую: {parts} (хронометраж сохраняется)")
-                else:
-                    print("[i] Рекламных баннеров не обнаружено")
-            else:
-                print("[warn] OCR недоступен — визуальные баннеры не детектируются")
 
         # 4) Кандидаты
         if text_segments:
@@ -187,13 +164,10 @@ def process(cfg: Config) -> PipelineResult:
             out_path = str(out_dir / out_name)
             if cfg.vertical:
                 cutting.make_vertical(
-                    input_path, cand, out_path,
-                    blur_bg=cfg.blur_bg, bar=bar, offset=prefix, crop_edges=crop_edges,
+                    input_path, cand, out_path, blur_bg=cfg.blur_bg, bar=bar, offset=prefix
                 )
             else:
-                cutting.cut_clip(
-                    input_path, cand, out_path, bar=bar, offset=prefix, crop_edges=crop_edges,
-                )
+                cutting.cut_clip(input_path, cand, out_path, bar=bar, offset=prefix)
             return cand, out_name, out_path
 
         bar = tqdm(total=sum(c.duration for c in picked), desc="Нарезка", unit="s")
