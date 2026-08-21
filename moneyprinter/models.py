@@ -72,6 +72,8 @@ class ClipResult:
     text: str = ""
     reason: str = ""
     vertical: bool = False
+    hashtags: list = field(default_factory=list)
+    caption: str = ""
 
 
 @dataclass

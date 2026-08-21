@@ -19,6 +19,7 @@ from . import media
 from . import score as score_mod
 from . import scenes as scenes_mod
 from . import transcribe as transcribe_mod
+from . import hashtags as hashtags_mod
 from .models import ClipCandidate, ClipResult, PipelineResult, TimestampedText
 
 
@@ -187,6 +188,12 @@ def process(cfg: Config) -> PipelineResult:
             ]
             for fut in as_completed(futures):
                 cand, out_name, out_path = fut.result()
+                tags = hashtags_mod.generate_hashtags(
+                    cand.text,
+                    llm_model=cfg.llm_model,
+                    llm_url=cfg.llm_url,
+                )
+                caption = hashtags_mod.build_caption(cand.text, tags)
                 result.clips.append(
                     ClipResult(
                         path=out_path,
@@ -197,6 +204,8 @@ def process(cfg: Config) -> PipelineResult:
                         text=cand.text,
                         reason=cand.reason,
                         vertical=cfg.vertical,
+                        hashtags=tags,
+                        caption=caption,
                     )
                 )
                 print(
@@ -224,8 +233,8 @@ def process(cfg: Config) -> PipelineResult:
         csv_path = out_dir / "report.csv"
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow(["file", "start", "end", "duration", "score", "text"])
+            writer.writerow(["file", "start", "end", "duration", "score", "text", "hashtags", "caption"])
             for c in result.clips:
-                writer.writerow([c.path, f"{c.start:.2f}", f"{c.end:.2f}", f"{c.duration:.2f}", f"{c.score:.3f}", c.text])
+                writer.writerow([c.path, f"{c.start:.2f}", f"{c.end:.2f}", f"{c.duration:.2f}", f"{c.score:.3f}", c.text, " ".join(f"#{t}" for t in c.hashtags), c.caption])
 
     return result
