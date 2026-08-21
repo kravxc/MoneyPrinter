@@ -103,14 +103,15 @@ def sample_frames(
         out = os.path.join(out_dir, f"frame_{idx + 1:06d}.jpg")
         subprocess.check_call(
             [
-                "ffmpeg", "-v", "error", "-y",
+                "ffmpeg", "-v", "error", "-hide_banner", "-y",
                 "-ss", f"{sec:.3f}",
                 "-i", str(input_path),
                 "-frames:v", "1",
                 "-vf", "scale=640:-2",
                 "-q:v", "4",
                 out,
-            ]
+            ],
+            stderr=subprocess.DEVNULL,
         )
         return (sec, out)
 
