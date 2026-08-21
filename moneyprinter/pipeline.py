@@ -27,7 +27,7 @@ class Config:
     input_path: str
     output_dir: str = "clips"
     max_clips: int = 10
-    min_duration: float = 10.0
+    min_duration: float = 60.0
     max_duration: float = 180.0
     min_score: float = 0.0
     vertical: bool = True
@@ -156,6 +156,8 @@ def process(cfg: Config) -> PipelineResult:
             )
         candidates = score_mod.non_max_suppress(candidates)
         picked = score_mod.pick_top(candidates, max_clips=cfg.max_clips, min_score=cfg.min_score)
+        # Номера клипов — строго по хронологии (как идут по видео)
+        picked.sort(key=lambda c: c.start)
 
         # 6) Нарезка (параллельно, чтобы задействовать все ядра CPU)
         from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -202,6 +204,9 @@ def process(cfg: Config) -> PipelineResult:
                     f"score={cand.total_score:.2f}  «{cand.text[:60]}»"
                 )
         bar.close()
+
+        # Сортируем итоговые клипы по хронологии для отчёта
+        result.clips.sort(key=lambda c: c.start)
 
         # 7) Отчёт
         report = out_dir / "report.json"
