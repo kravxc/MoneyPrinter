@@ -20,13 +20,11 @@ dependencies = [
 # Тяжёлые AI-зависимости вынесены в extras, чтобы базовый запуск оставался лёгким
 transcribe = ["faster-whisper>=1.0"]
 scenes = ["scenedetect[opencv]>=0.6.4"]
-banner = ["rapidocr_onnxruntime>=1.3.9"]
 llm = ["ollama>=0.4"]
 dev = ["pytest>=7.0"]
 all = [
     "faster-whisper>=1.0",
     "scenedetect[opencv]>=0.6.4",
-    "rapidocr_onnxruntime>=1.3.9",
     "ollama>=0.4",
     "pytest>=7.0",
 ]

@@ -26,7 +26,6 @@ class TimestampedText:
     end: float
     text: str
     no_speech_prob: float = 0.0
-    is_ad: bool = False
 
 
 @dataclass
