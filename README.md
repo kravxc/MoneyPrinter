@@ -90,14 +90,33 @@ moneyprinter process video.mp4 --schedule --schedule-interval 7200
 # или вручную добавить готовые клипы в очередь
 moneyprinter publish clips/ --queue --schedule-interval 5400
 
-# 3) держать очередь и публиковать по таймеру (запустите в tmux/screen)
-moneyprinter run-schedule --schedule-interval 7200
+# 3) два варианта держать расписание:
+#
+# 3a) долгий процесс в tmux/screen (сам будит себя):
+#     moneyprinter run-schedule --schedule-interval 7200
+#
+# 3b) НЕ держать программу постоянно — пусть системный планировщик
+#     будит `publish-next` каждые 2 часа (macOS launchd / Linux cron /
+#     Windows Task Scheduler):
+moneyprinter install-scheduler --schedule-interval 7200
+#   убрать автозапуск: moneyprinter uninstall-scheduler
+#   вручную «опубликовать следующий»: moneyprinter publish-next
 ```
 
 Хештеги под каждый клип генерируются автоматически: базовый набор
 (`#shorts #тикток #фильм …`) плюс тематические — от локальной LLM (`--llm`)
 либо эвристикой по ключевым словам текста клипа. Состояние очереди
 сохраняется в JSON, переживает перезапуск: опубликованное не повторяется.
+
+При варианте 3b программа **не висит в памяти 24/7** — системный планировщик
+просыпает `moneyprinter publish-next` раз в `interval` секунд; тот публикует
+ровно один «наступивший» клип и завершается. При ошибке публикации клип
+остаётся «due», чтобы планировщик повторил попытку при следующем просыпании.
+Поддерживаются macOS, Linux и **Windows** (через `schtasks`).
+
+> ⚠️ Для Windows: Playwright запускает Chromium в фоновом режиме; убедитесь,
+> что аккаунт, под которым работает задача, имеет доступ к cookies-файлу
+> (`%USERPROFILE%\.moneyprinter\tiktok_cookies.json`).
 
 Ход обработки показывается прогресс-барами в консоли:
 `Сцены` — декодирование видеоряда, `Нарезка` — единый бар через все клипы.

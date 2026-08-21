@@ -60,11 +60,26 @@ def _build_parser() -> argparse.ArgumentParser:
     p_publish.add_argument("--schedule-interval", type=float, default=7200.0, help="Интервал между публикациями, сек (default: 7200 = 2ч)")
     p_publish.add_argument("--state", default=scheduler_mod.DEFAULT_STATE_FILE, help="Файл состояния очереди")
 
-    p_sched = sub.add_parser("run-schedule", help="Держать очередь и публиковать по расписанию")
+    p_sched = sub.add_parser("run-schedule", help="Держать очередь и публиковать по расписанию (долгий процесс)")
     p_sched.add_argument("--state", default=scheduler_mod.DEFAULT_STATE_FILE, help="Файл состояния очереди")
     p_sched.add_argument("--schedule-interval", type=float, default=7200.0, help="Интервал между публикациями, сек (default: 7200 = 2ч)")
     p_sched.add_argument("--cookie", default=upload_mod.DEFAULT_COOKIE_FILE, help="Файл cookies TikTok")
     p_sched.add_argument("--dry-run", action="store_true", help="Не публиковать реально, только показывать план")
+
+    p_next = sub.add_parser("publish-next", help="Опубликовать один наступивший клип и выйти (для cron/launchd/schtasks)")
+    p_next.add_argument("--state", default=scheduler_mod.DEFAULT_STATE_FILE, help="Файл состояния очереди")
+    p_next.add_argument("--schedule-interval", type=float, default=7200.0, help="Интервал, сек (используется при повторе ошибки)")
+    p_next.add_argument("--cookie", default=upload_mod.DEFAULT_COOKIE_FILE, help="Файл cookies TikTok")
+    p_next.add_argument("--dry-run", action="store_true", help="Не публиковать реально")
+
+    p_inst = sub.add_parser("install-scheduler", help="Поставить автозапуск publish-next в системный планировщик (cron/launchd/schtasks)")
+    p_inst.add_argument("--schedule-interval", type=float, default=7200.0, help="Интервал просыпания, сек (default: 7200 = 2ч)")
+    p_inst.add_argument("--state", default=scheduler_mod.DEFAULT_STATE_FILE, help="Файл состояния очереди")
+    p_inst.add_argument("--cookie", default=upload_mod.DEFAULT_COOKIE_FILE, help="Файл cookies TikTok")
+    p_inst.add_argument("--dry-run", action="store_true", help="Только показать, что будет создано")
+
+    p_uninst = sub.add_parser("uninstall-scheduler", help="Удалить автозапуск из системного планировщика")
+    p_uninst.add_argument("--dry-run", action="store_true", help="Только показать, что будет удалено")
 
     return parser
 
@@ -126,6 +141,59 @@ def _cmd_run_schedule(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_publish_next(args: argparse.Namespace) -> int:
+    scheduler_mod.publish_next(
+        interval=args.schedule_interval,
+        state_file=args.state,
+        cookie_path=args.cookie,
+        dry_run=args.dry_run,
+    )
+    return 0
+
+
+def _cmd_install_scheduler(args):
+    msg = scheduler_mod.install_scheduler(
+        interval=args.schedule_interval,
+        state_file=args.state,
+        cookie_path=args.cookie,
+        dry_run=args.dry_run,
+    )
+    print(msg)
+    return 0
+
+
+def _cmd_uninstall_scheduler(args):
+    import shutil
+    import subprocess
+
+    if sys.platform == "win32":
+        task = "MoneyPrinterTikTok"
+        if args.dry_run:
+            print(f"(dry-run) удалю задачу Windows «{task}»")
+        else:
+            subprocess.run(f'schtasks /Delete /TN "{task}" /F', shell=True, check=False)
+            print(f"Удалена задача Windows «{task}».")
+    elif sys.platform == "darwin":
+        label = "com.moneyprinter.tiktok"
+        plist = os.path.expanduser(f"~/Library/LaunchAgents/{label}.plist")
+        if args.dry_run:
+            print(f"(dry-run) выгружу и удалю {plist}")
+        else:
+            subprocess.run(["launchctl", "unload", plist], check=False)
+            if os.path.exists(plist):
+                os.remove(plist)
+            print(f"launchd agent «{label}» удалён.")
+    else:
+        if args.dry_run:
+            print("(dry-run) уберу строки moneyprinter-tiktok из crontab")
+        else:
+            out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, check=False).stdout or ""
+            kept = [l for l in out.splitlines() if "moneyprinter-tiktok" not in l]
+            subprocess.run(["crontab", "-"], input="\n".join(kept) + "\n", text=True, check=False)
+            print("Строки moneyprinter-tiktok удалены из crontab.")
+    return 0
+
+
 def main(argv=None) -> int:
     args = _build_parser().parse_args(argv)
     try:
@@ -137,6 +205,12 @@ def main(argv=None) -> int:
             return _cmd_publish(args)
         if args.command == "run-schedule":
             return _cmd_run_schedule(args)
+        if args.command == "publish-next":
+            return _cmd_publish_next(args)
+        if args.command == "install-scheduler":
+            return _cmd_install_scheduler(args)
+        if args.command == "uninstall-scheduler":
+            return _cmd_uninstall_scheduler(args)
 
         cfg = Config(
             input_path=args.input,

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -106,6 +107,140 @@ def _next_due(state: ScheduleState) -> Optional[QueueItem]:
     if not due:
         return None
     return min(due, key=lambda i: i.scheduled_at)
+
+
+def publish_next(
+    interval: float = DEFAULT_INTERVAL,
+    state_file: str = DEFAULT_STATE_FILE,
+    cookie_path: str = "",
+    dry_run: bool = False,
+) -> bool:
+    """One-shot: публикует ровно один «наступивший» клип и выходит.
+
+    Предназначен для запуска из системного планировщика (cron/launchd/
+    schtasks), чтобы программа НЕ висела в памяти постоянно. Возвращает
+    True, если что-то опубликовано (или dry-run), иначе False.
+
+    При ошибке публикации клип остаётся «due» (scheduled_at ставится в
+    прошлое на интервал), чтобы системный планировщик повторил попытку
+    при следующем просыпании, а не ждал целый интервал.
+    """
+    state = ScheduleState.load(state_file, interval)
+    state.interval = interval
+    item = _next_due(state)
+    if item is None:
+        pending = [i for i in state.items if not i.published]
+        if not pending:
+            print("[i] Очередь пуста — публиковать нечего.")
+        else:
+            soon = min(pending, key=lambda i: i.scheduled_at)
+            wait = max(0.0, soon.scheduled_at - time.time())
+            print(f"[i] Рано. Следующий клип будет готов через {wait/60:.1f} мин.")
+        return False
+
+    print(f"[→] Публикую: {os.path.basename(item.video_path)}")
+    if dry_run:
+        print(f"    (dry-run) caption: {item.caption[:80]}")
+        item.published = True
+        item.published_at = time.time()
+        state.save()
+        return True
+    try:
+        upload_video(item.video_path, item.caption, cookie_path=cookie_path or "")
+        item.published = True
+        item.published_at = time.time()
+        state.save()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        item.error = str(exc)
+        print(f"[!] Ошибка публикации {os.path.basename(item.video_path)}: {exc}")
+        # оставляем due в прошлом, чтобы системный планировщик повторил скоро
+        item.scheduled_at = time.time() - interval
+        state.save()
+        return False
+
+
+def install_scheduler(
+    interval: float = DEFAULT_INTERVAL,
+    state_file: str = DEFAULT_STATE_FILE,
+    cookie_path: str = "",
+    dry_run: bool = False,
+) -> str:
+    """Создаёт задание в системном планировщике (cron/launchd/schtasks).
+
+    Программа сама НЕ работает постоянно — системный планировщик будит
+    `moneyprinter publish-next` каждые `interval` секунд. Поддерживаются:
+      * macOS / Linux  → launchd (macOS, user agent) или crontab (Linux);
+      * Windows        → schtasks.
+
+    Возвращает человекочитаемое описание того, что сделано.
+    """
+    import shutil
+    import subprocess
+
+    exe = shutil.which("moneyprinter") or f"{sys.executable} -m moneyprinter"
+    cmd = f'{exe} publish-next --state "{state_file}" --cookie "{cookie_path}" --schedule-interval {interval:g}'
+
+    minutes = max(1, int(round(interval / 60)))
+
+    if sys.platform == "win32":
+        task = "MoneyPrinterTikTok"
+        schtasks = (
+            f'schtasks /Create /TN "{task}" /TR "{cmd}" '
+            f"/SC MINUTE /MO {minutes} /F"
+        )
+        if dry_run:
+            return f"(dry-run) Windows schtasks:\n  {schtasks}"
+        subprocess.run(schtasks, shell=True, check=False)
+        return f"Создана задача Windows «{task}»: запуск каждые {minutes} мин."
+
+    if sys.platform == "darwin":
+        label = "com.moneyprinter.tiktok"
+        plist_path = os.path.expanduser(f"~/Library/LaunchAgents/{label}.plist")
+        prog = shutil.which("moneyprinter") or sys.executable
+        prog_args = [prog]
+        if shutil.which("moneyprinter") is None:
+            prog_args = [sys.executable, "-m", "moneyprinter"]
+        plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>{label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        {chr(10).join(f"        <string>{a}</string>" for a in prog_args)}
+        <string>publish-next</string>
+        <string>--state</string><string>{state_file}</string>
+        <string>--cookie</string><string>{cookie_path}</string>
+        <string>--schedule-interval</string><string>{interval:g}</string>
+    </array>
+    <key>StartInterval</key><integer>{int(interval)}</integer>
+    <key>RunAtLoad</key><true/>
+    <key>StandardOutPath</key><string>{os.path.expanduser('~/.moneyprinter/launchd.log')}</string>
+    <key>StandardErrorPath</key><string>{os.path.expanduser('~/.moneyprinter/launchd.err')}</string>
+</dict>
+</plist>
+"""
+        if dry_run:
+            return f"(dry-run) macOS launchd plist → {plist_path}:\n{plist}"
+        Path(plist_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(plist_path).write_text(plist, encoding="utf-8")
+        subprocess.run(["launchctl", "load", plist_path], check=False)
+        return f"launchd agent «{label}» установлен: запуск каждые {minutes} мин."
+
+    # Linux — crontab
+    cron_line = f"*/{minutes} * * * * {cmd} >> {os.path.expanduser('~/.moneyprinter/cron.log')} 2>&1"
+    if dry_run:
+        return f"(dry-run) Linux crontab:\n  {cron_line}"
+    try:
+        existing = subprocess.run(["crontab", "-l"], capture_output=True, text=True, check=False).stdout or ""
+    except Exception:
+        existing = ""
+    marker = "# moneyprinter-tiktok"
+    kept = [l for l in existing.splitlines() if marker not in l]
+    kept.append(f"{marker}\n{cron_line}")
+    subprocess.run(["crontab", "-"], input="\n".join(kept) + "\n", text=True, check=False)
+    return f"Добавлена строка в crontab: запуск каждые {minutes} мин."
 
 
 def run_schedule(
