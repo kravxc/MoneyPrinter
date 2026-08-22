@@ -13,6 +13,7 @@ from .media import probe
 from . import upload as upload_mod
 from . import scheduler as scheduler_mod
 from . import hashtags as hashtags_mod
+from . import serial as serial_mod
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -82,7 +83,28 @@ def _build_parser() -> argparse.ArgumentParser:
     p_uninst = sub.add_parser("uninstall-scheduler", help="Удалить автозапуск из системного планировщика")
     p_uninst.add_argument("--dry-run", action="store_true", help="Только показать, что будет удалено")
 
+    _add_serial_parser(sub)
+
     return parser
+
+
+def _add_serial_parser(sub) -> None:
+    p = sub.add_parser("serial", help="Режим сериал/фильм: нарезать видео подряд по порядку на микро-серии")
+    p.add_argument("input", help="Путь к видеофайлу (одна серия/эпизод)")
+    p.add_argument("-o", "--output", default="clips", help="Папка для клипов (default: clips)")
+    p.add_argument("--part-duration", type=float, default=60.0, help="Длина одной микро-серии, сек (default: 60)")
+    p.add_argument("--max-parts", type=int, default=0, help="Макс. число частей (0 = все до конца)")
+    p.add_argument("--start", type=float, default=0.0, help="С какой секунды резать (default: 0)")
+    p.add_argument("--end", type=float, default=0.0, help="До какой секунды (0 = до конца)")
+    p.add_argument("--series-title", default="", help="Название сериала (для подписи/тегов)")
+    p.add_argument("--episode", type=int, default=1, help="Номер серии (default: 1)")
+    p.add_argument("--base-hashtag", action="append", default=[], help="Доп. тег (можно несколько), напр. --base-hashtag урокихимии")
+    p.add_argument("--horizontal", action="store_true", help="Не конвертировать в 9:16")
+    p.add_argument("--crop", action="store_true", help="Вертикаль кадрированием вместо размытого фона")
+    p.add_argument("--jobs", type=int, default=0, help="Сколько частей нарезать параллельно (0 = все ядра)")
+    p.add_argument("--schedule", action="store_true", help="Сразу поставить части в очередь публикации (первая сразу, остальные по интервалу)")
+    p.add_argument("--schedule-interval", type=float, default=7200.0, help="Интервал между публикациями, сек (default: 7200 = 2ч)")
+    p.add_argument("--no-upload", action="store_true", help="Не запускать планировщик после нарезки")
 
 
 def _cmd_probe(args: argparse.Namespace) -> int:
@@ -197,6 +219,43 @@ def _cmd_uninstall_scheduler(args):
     return 0
 
 
+def _cmd_serial(args: argparse.Namespace) -> int:
+    cfg = serial_mod.SerialConfig(
+        input_path=args.input,
+        output_dir=args.output,
+        part_duration=args.part_duration,
+        max_parts=args.max_parts,
+        start=args.start,
+        end=args.end,
+        vertical=not args.horizontal,
+        blur_bg=not args.crop,
+        series_title=args.series_title,
+        episode=args.episode,
+        base_hashtags=args.base_hashtag or None,
+        jobs=args.jobs,
+    )
+    result = serial_mod.process_serial(cfg)
+    print(f"\nГотово: {len(result.clips)} микро-серий → {args.output}")
+    if not result.clips:
+        return 0
+
+    if args.schedule:
+        videos = [c.path for c in result.clips]
+        captions = [c.caption for c in result.clips]
+        scheduler_mod.plan_queue(
+            videos, captions, interval=args.schedule_interval, state_file=scheduler_mod.DEFAULT_STATE_FILE
+        )
+        print(f"[✓] Части поставлены в очередь публикации (интервал {args.schedule_interval/3600:.1f}ч).")
+        if not args.no_upload:
+            print("[i] Запускаю планировщик (Ctrl+C — сохранить состояние и выйти)...")
+            scheduler_mod.run_schedule(
+                interval=args.schedule_interval,
+                state_file=scheduler_mod.DEFAULT_STATE_FILE,
+                cookie_path=upload_mod.DEFAULT_COOKIE_FILE,
+            )
+    return 0
+
+
 def main(argv=None) -> int:
     args = _build_parser().parse_args(argv)
     try:
@@ -218,6 +277,8 @@ def main(argv=None) -> int:
             return _cmd_install_scheduler(args)
         if args.command == "uninstall-scheduler":
             return _cmd_uninstall_scheduler(args)
+        if args.command == "serial":
+            return _cmd_serial(args)
 
         cfg = Config(
             input_path=args.input,
