@@ -180,44 +180,74 @@ def _extract_hook_fallback(text: str, limit: int = 70) -> str:
     return max(sentences, key=len)[:limit]
 
 
+# Эмодзи под настроение/тематику (добавляется в конец крючка)
+_EMOJI_BY_TOPIC = [
+    ("смех", "😂"), ("ха", "😂"), ("lol", "😂"), ("рж", "😂"),
+    ("любов", "❤️"), ("поцел", "😘"), ("свадьб", "💍"),
+    ("драм", "😱"), ("ужас", "😱"), ("страх", "😱"), ("кров", "🩸"),
+    ("огонь", "🔥"), ("пожар", "🔥"), ("взрыв", "💥"), ("бум", "💥"),
+    ("хими", "🧪"), ("лаборатор", "🧪"), ("наука", "🔬"),
+    ("детектив", "🕵️"), ("убийств", "🕵️"), ("тайна", "🕵️"), ("загадк", "❓"),
+    ("суд", "⚖️"), ("полиц", "🚔"), ("преступл", "🚔"),
+    ("деньги", "💰"), ("богат", "💰"), ("золот", "💰"),
+    ("спорт", "🏆"), ("футбол", "⚽"), ("бой", "🥊"),
+    ("еда", "🍔"), ("готов", "🍳"),
+    ("музык", "🎵"), ("песн", "🎶"), ("танц", "💃"),
+    ("игра", "🎮"), ("космос", "🚀"), ("природ", "🌿"),
+]
+_DEFAULT_EMOJI = "🔥"
+
+
+def _pick_emoji(text: str) -> str:
+    low = (text or "").lower()
+    for needle, emoji in _EMOJI_BY_TOPIC:
+        if needle in low:
+            return emoji
+    return _DEFAULT_EMOJI
+
+
 def generate_hook(
     text: str,
     llm_model: Optional[str] = None,
     llm_url: Optional[str] = None,
-    limit: int = 70,
+    limit: int = 60,
 ) -> str:
-    """Короткий «крючок»-описание по содержанию (вопрос/интрига, 1 предложение).
+    """Короткий «крючок»: пара слов-интрига + эмодзи в конце.
 
-    Сначала пробуем локальную LLM (как в rank_with_llm), при неудаче —
-    эвристика по тексту. Пустой текст → пустая строка. Коротко (до `limit`
-    символов), но с удержанием — формулируется как вопрос или интрига.
+    Формат примерно как у вас: «Кто отравил пробирку?🧪🔍». Сначала пробуем
+    локальную LLM (просим 2-4 слова + эмодзи), иначе — эвристика по тексту.
+    Пустой текст → пустая строка.
     """
     text = (text or "").strip()
     if not text:
         return ""
+    emoji = _pick_emoji(text)
     if llm_model:
         try:
             import ollama
         except ImportError:
-            return _extract_hook_fallback(text, limit)
+            return _extract_hook_fallback(text, limit) + emoji
         client = ollama.Client(host=llm_url) if llm_url else ollama
         prompt = (
-            "Ты — редактор TikTok. Придумай ОДИН короткий цепляющий крючок "
-            "по тексту видео: острый вопрос или интрига, чтобы зритель досмотрел. "
-            f"Строго до {limit} символов, на языке текста, без хештегов, без "
-            "кавычек и точки на конце. Только сама фраза.\n"
+            "Ты — редактор TikTok. Сформулируй ОДИН короткий крючок по тексту "
+            "видео: всего 2-4 слова (вопрос или интрига), чтобы зритель досмотрел. "
+            f"Строго до {limit} символов, на языке текста, без хештегов и кавычек. "
+            "В конце обязательно поставь 1-2 подходящих эмодзи.\n"
             f"Текст: {text!r}\nКрючок:"
         )
         try:
             resp = client.chat(
                 model=llm_model,
                 messages=[{"role": "user", "content": prompt}],
-                options={"temperature": 0.6, "num_predict": 60},
+                options={"temperature": 0.6, "num_predict": 50},
             )
-            hook = resp["message"]["content"].strip().strip('"').strip("'").rstrip(".")
+            hook = resp["message"]["content"].strip().strip('"').strip("'").rstrip(". ")
             hook = hook.splitlines()[0] if hook else ""
             if hook:
-                return hook[:limit]
+                # гарантируем наличие эмодзи
+                if not any(ord(c) > 0x1F000 for c in hook):
+                    hook = hook + " " + emoji
+                return hook[:limit + 6]
         except Exception:
             pass
-    return _extract_hook_fallback(text, limit)
+    return _extract_hook_fallback(text, limit) + emoji
