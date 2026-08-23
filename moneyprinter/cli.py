@@ -85,6 +85,19 @@ def _build_parser() -> argparse.ArgumentParser:
 
     _add_serial_parser(sub)
 
+    p_regen = sub.add_parser("regen-captions", help="Перегенерировать описания/хештеги для уже нарезанных клипов (по report.json)")
+    p_regen.add_argument("input", help="Путь к исходному видеофайлу (сериал/эпизод)")
+    p_regen.add_argument("-o", "--output", default="clips", help="Папка с клипами и report.json")
+    p_regen.add_argument("--series-title", default="", help="Название сериала")
+    p_regen.add_argument("--episode", type=int, default=1, help="Номер серии")
+    p_regen.add_argument("--base-hashtag", action="append", default=[], help="Доп. тег (можно несколько)")
+    p_regen.add_argument("--whisper-model", default="base", help="Модель Whisper")
+    p_regen.add_argument("--device", default="auto", help="auto/cpu/cuda")
+    p_regen.add_argument("--language", default=None, help="Язык транскрипции")
+    p_regen.add_argument("--llm", default=None, metavar="MODEL", help="Локальная LLM для описания")
+    p_regen.add_argument("--llm-url", default=None, help="Ollama base url")
+    p_regen.add_argument("--jobs", type=int, default=0, help="Параллельность транскрипции (0 = все ядра)")
+
     return parser
 
 
@@ -269,6 +282,25 @@ def _cmd_serial(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_regen(args: argparse.Namespace) -> int:
+    n = serial_mod.regenerate_captions(
+        input_path=args.input,
+        output_dir=args.output,
+        series_title=args.series_title,
+        episode=args.episode,
+        base_hashtags=args.base_hashtag or None,
+        whisper_model=args.whisper_model,
+        device=args.device,
+        language=args.language,
+        llm_model=args.llm,
+        llm_url=args.llm_url,
+        auto_install=True,
+        jobs=args.jobs,
+    )
+    print(f"Готово: перегенерировано описаний для {n} клипов.")
+    return 0
+
+
 def main(argv=None) -> int:
     args = _build_parser().parse_args(argv)
     try:
@@ -292,6 +324,8 @@ def main(argv=None) -> int:
             return _cmd_uninstall_scheduler(args)
         if args.command == "serial":
             return _cmd_serial(args)
+        if args.command == "regen-captions":
+            return _cmd_regen(args)
 
         cfg = Config(
             input_path=args.input,
