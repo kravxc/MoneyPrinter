@@ -105,7 +105,9 @@ def _add_serial_parser(sub) -> None:
     p = sub.add_parser("serial", help="Режим сериал/фильм: нарезать видео подряд по порядку на микро-серии")
     p.add_argument("input", help="Путь к видеофайлу (одна серия/эпизод)")
     p.add_argument("-o", "--output", default="clips", help="Папка для клипов (default: clips)")
-    p.add_argument("--part-duration", type=float, default=60.0, help="Длина одной микро-серии, сек (default: 60)")
+    p.add_argument("--part-duration", type=float, default=67.5, help="Средняя длина микро-серии, сек (default: 67.5 ≈ 65-70)")
+    p.add_argument("--part-min", type=float, default=65.0, help="Мин. длина части, сек (default: 65)")
+    p.add_argument("--part-max", type=float, default=70.0, help="Макс. длина части, сек (default: 70)")
     p.add_argument("--max-parts", type=int, default=0, help="Макс. число частей (0 = все до конца)")
     p.add_argument("--start", type=float, default=0.0, help="С какой секунды резать (default: 0)")
     p.add_argument("--end", type=float, default=0.0, help="До какой секунды (0 = до конца)")
@@ -243,6 +245,8 @@ def _cmd_serial(args: argparse.Namespace) -> int:
         input_path=args.input,
         output_dir=args.output,
         part_duration=args.part_duration,
+        part_duration_min=args.part_min,
+        part_duration_max=args.part_max,
         max_parts=args.max_parts,
         start=args.start,
         end=args.end,
