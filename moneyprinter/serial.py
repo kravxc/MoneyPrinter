@@ -28,7 +28,9 @@ from .models import ClipCandidate, ClipResult, PipelineResult
 class SerialConfig:
     input_path: str
     output_dir: str = "clips"
-    part_duration: float = 60.0       # длина одной микро-серии, сек
+    part_duration: float = 67.5       # средняя длина микро-серии, сек
+    part_duration_min: float = 65.0   # минимальная длина части, сек
+    part_duration_max: float = 70.0   # максимальная длина части, сек
     max_parts: int = 0                # 0 = все части до конца видео
     start: float = 0.0                # с какого момента резать (сек)
     end: float = 0.0                  # до какого момента (0 = до конца)
@@ -48,25 +50,35 @@ class SerialConfig:
 
 
 def _build_parts(cfg: SerialConfig, duration: float) -> list:
-    """Режет [start, end] на последовательные части по part_duration.
+    """Режет [start, end] на последовательные части длиной 65-70 сек.
 
-    Возвращает список (part_index, start, end), индексация с 1, строго по порядку.
+    Длина каждой части берётся случайно в диапазоне [part_duration_min,
+    part_duration_max] (вокруг part_duration) - чтобы видео не выглядели
+    одинаковыми. Возвращает список (part_index, start, end), индексация с 1.
     """
+    import random
+
     start = max(0.0, cfg.start)
     end = cfg.end if cfg.end and cfg.end > start else duration
     end = min(end, duration)
-    if end - start < cfg.part_duration:
-        # видео короче одной части — один клип на всё
+
+    def _dur() -> float:
+        lo = min(cfg.part_duration_min, cfg.part_duration_max)
+        hi = max(cfg.part_duration_min, cfg.part_duration_max)
+        return random.uniform(lo, hi)
+
+    if end - start <= cfg.part_duration_min:
+        # видео короче одной части - один клип на всё
         return [(1, start, end)]
 
     parts = []
     i = 1
     t = start
     while t < end - 1e-6:
-        p_end = min(end, t + cfg.part_duration)
-        # последний кусок короче part_duration — оставляем как есть
+        p_end = min(end, t + _dur())
+        # последний кусок короче минимума - оставляем как есть (не дробим)
         parts.append((i, t, p_end))
-        t += cfg.part_duration
+        t = p_end
         i += 1
     if cfg.max_parts and cfg.max_parts > 0:
         parts = parts[: cfg.max_parts]
