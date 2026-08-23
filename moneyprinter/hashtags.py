@@ -161,3 +161,59 @@ def build_caption(text: str, hashtags: List[str], max_chars: int = 2000) -> str:
         caption_bits.append(tags)
     caption = "\n\n".join(caption_bits)
     return caption[:max_chars]
+
+
+def _extract_hook_fallback(text: str, limit: int = 120) -> str:
+    """Без LLM: берём самую «интересную» фразу — длинную и осмысленную."""
+    import re
+
+    sentences = re.split(r"[.!?…]+", (text or "").replace("\n", " "))
+    sentences = [s.strip(" -\t") for s in sentences if len(s.strip()) >= 4]
+    if not sentences:
+        return (text or "").strip()[:limit]
+    for needle in ("смех", "ха", "lol", "ого", "вау", "шок", "ужас", "кто", "почему", "зачем"):
+        for s in sentences:
+            if needle in s.lower():
+                return s[:limit]
+    return max(sentences, key=len)[:limit]
+
+
+def generate_hook(
+    text: str,
+    llm_model: Optional[str] = None,
+    llm_url: Optional[str] = None,
+    limit: int = 120,
+) -> str:
+    """Короткий «крючок»-описание по содержанию (вопрос/интрига, 1 предложение).
+
+    Сначала пробуем локальную LLM (как в rank_with_llm), при неудаче —
+    эвристика по тексту. Пустой текст → пустая строка.
+    """
+    text = (text or "").strip()
+    if not text:
+        return ""
+    if llm_model:
+        try:
+            import ollama
+        except ImportError:
+            return _extract_hook_fallback(text, limit)
+        client = ollama.Client(host=llm_url) if llm_url else ollama
+        prompt = (
+            "Ты — редактор TikTok. По тексту видео придумай ОДИН цепляющий "
+            "крючок-описание: короткий вопрос или интрига, максимум 120 символов, "
+            "на языке текста, без хештегов и кавычек. Только сама фраза.\n"
+            f"Текст: {text!r}\nКрючок:"
+        )
+        try:
+            resp = client.chat(
+                model=llm_model,
+                messages=[{"role": "user", "content": prompt}],
+                options={"temperature": 0.5, "num_predict": 80},
+            )
+            hook = resp["message"]["content"].strip().strip('"').strip("'")
+            hook = hook.splitlines()[0] if hook else ""
+            if hook:
+                return hook[:limit]
+        except Exception:
+            pass
+    return _extract_hook_fallback(text, limit)

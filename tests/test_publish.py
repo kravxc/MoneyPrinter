@@ -30,6 +30,16 @@ def test_build_caption_formats_tags():
     assert "привет мир" in cap
 
 
+def test_generate_hook_fallback_picks_interesting_sentence():
+    text = "Обычный день. Кто отравил пробирку? Просто шли по коридору."
+    hook = hashtags.generate_hook(text, llm_model=None)
+    assert "пробирку" in hook
+
+
+def test_generate_hook_empty_text():
+    assert hashtags.generate_hook("", llm_model=None) == ""
+
+
 def test_plan_queue_first_immediate_rest_spaced(tmp_path):
     state_file = str(tmp_path / "sched.json")
     interval = 3600.0

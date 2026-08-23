@@ -102,6 +102,12 @@ def _add_serial_parser(sub) -> None:
     p.add_argument("--horizontal", action="store_true", help="Не конвертировать в 9:16")
     p.add_argument("--crop", action="store_true", help="Вертикаль кадрированием вместо размытого фона")
     p.add_argument("--jobs", type=int, default=0, help="Сколько частей нарезать параллельно (0 = все ядра)")
+    p.add_argument("--whisper-model", default="base", help="Модель Whisper для описания по содержанию (tiny/base/small/…)")
+    p.add_argument("--device", default="auto", help="auto/cpu/cuda")
+    p.add_argument("--language", default=None, help="Язык транскрипции (напр. ru)")
+    p.add_argument("--llm", default=None, metavar="MODEL", help="Локальная LLM для описания по содержанию (напр. llama3.2)")
+    p.add_argument("--llm-url", default=None, help="Ollama base url")
+    p.add_argument("--no-audio-desc", action="store_true", help="Не транскрибировать (описания без крючка по содержанию)")
     p.add_argument("--schedule", action="store_true", help="Сразу поставить части в очередь публикации (первая сразу, остальные по интервалу)")
     p.add_argument("--schedule-interval", type=float, default=7200.0, help="Интервал между публикациями, сек (default: 7200 = 2ч)")
     p.add_argument("--no-upload", action="store_true", help="Не запускать планировщик после нарезки")
@@ -233,6 +239,13 @@ def _cmd_serial(args: argparse.Namespace) -> int:
         episode=args.episode,
         base_hashtags=args.base_hashtag or None,
         jobs=args.jobs,
+        whisper_model=args.whisper_model,
+        device=args.device,
+        language=args.language,
+        llm_model=args.llm,
+        llm_url=args.llm_url,
+        auto_install=True,
+        transcribe_audio=not args.no_audio_desc,
     )
     result = serial_mod.process_serial(cfg)
     print(f"\nГотово: {len(result.clips)} микро-серий → {args.output}")

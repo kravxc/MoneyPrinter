@@ -13,6 +13,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from tqdm import tqdm
@@ -37,6 +38,13 @@ class SerialConfig:
     episode: int = 1                  # номер серии
     base_hashtags: list = None        # доп. теги (название сериала и т.п.)
     jobs: int = 0                     # 0 = все ядра
+    whisper_model: str = "base"       # модель транскрипции
+    device: str = "auto"
+    language: Optional[str] = None
+    llm_model: Optional[str] = None   # локальная LLM для описания по содержанию
+    llm_url: Optional[str] = None
+    auto_install: bool = True
+    transcribe_audio: bool = True     # если False — описания без крючка по содержанию
 
 
 def _build_parts(cfg: SerialConfig, duration: float) -> list:
@@ -65,16 +73,22 @@ def _build_parts(cfg: SerialConfig, duration: float) -> list:
     return parts
 
 
-def _make_caption_and_tags(cfg: SerialConfig, part_idx: int, total: int, duration: float) -> tuple:
+def _make_caption_and_tags(cfg: SerialConfig, part_idx: int, total: int, duration: float, text: str = "") -> tuple:
     """Собирает подпись и теги для микро-серии.
 
-    В подпись добавляется «Серия N | Часть X/Y», чтобы TikTok-лента
-    воспринималась как продолжение. Теги = базовый набор + название сериала.
+    Описание — по содержанию (крючок из транскрипции через LLM/эвристику),
+    а не одинаковое на все части. Теги = базовый набор + название сериала
+    + тематика по тексту.
     """
     title_bit = cfg.series_title.strip() if cfg.series_title else "Сериал"
     header = f"{title_bit} | Серия {cfg.episode} | Часть {part_idx}/{total}"
-    snippet = f"⏱ {duration:.0f} сек. Продолжение — следующим роликом 👉"
-    tags_text = f"{title_bit} серия {cfg.episode} часть {part_idx}"
+    hook = hashtags_mod.generate_hook(
+        text, llm_model=cfg.llm_model, llm_url=cfg.llm_url, limit=120
+    )
+    snippet = (hook + "\n\n") if hook else ""
+    snippet += f"⏱ {duration:.0f} сек. Продолжение — следующим роликом 👉"
+    # теги: по названию сериала + по содержанию части
+    tags_text = f"{title_bit} серия {cfg.episode} {text}"
     tags = hashtags_mod.generate_hashtags(
         tags_text, base=cfg.base_hashtags or []
     )
@@ -97,6 +111,37 @@ def process_serial(cfg: SerialConfig) -> PipelineResult:
     if total == 0:
         return result
 
+    # --- Транскрипция всего видео один раз (для описания по содержанию) ---
+    # Сопоставим каждой части её текст по таймкодам.
+    part_texts: dict = {}
+    if cfg.transcribe_audio and info.has_audio:
+        try:
+            from . import transcribe as transcribe_mod
+            import tempfile
+
+            with tempfile.TemporaryDirectory(prefix="moneyprinter_serial_") as tmp:
+                wav = media.decode_audio_wav(input_path, str(Path(tmp) / "audio.wav"))
+                segs = transcribe_mod.transcribe(
+                    wav,
+                    model_name=cfg.whisper_model,
+                    device=cfg.device,
+                    language=cfg.language,
+                    auto_install=cfg.auto_install,
+                    duration=info.duration,
+                    jobs=jobs,
+                )
+            for idx, s, e in parts:
+                # собираем текст сегментов, попадающих в [s, e]
+                piece = " ".join(
+                    seg.text.strip() for seg in segs if seg.start >= s and seg.end <= e
+                )
+                part_texts[idx] = piece.strip()
+            print(f"[i] Транскрибировано сегментов: {len(segs)}; текст разложен по {total} частям.")
+        except Exception as exc:
+            print(f"[warn] Транскрипция недоступна ({exc}). Описания будут без крючка по содержанию.")
+    else:
+        print("[warn] Нет аудиодорожки — описания по содержанию не будут сгенерированы.")
+
     # Считаем хронометраж для единого прогресс-бара
     total_dur = sum(e - s for _, s, e in parts)
     bar = tqdm(total=total_dur, desc="Нарезка серии", unit="s")
@@ -107,8 +152,9 @@ def process_serial(cfg: SerialConfig) -> PipelineResult:
         acc += e - s
 
     def _worker(idx: int, start: float, end: float, prefix: float):
-        cand = ClipCandidate(start=start, end=end, text=f"{cfg.series_title} часть {idx}")
-        caption, tags = _make_caption_and_tags(cfg, idx, total, end - start)
+        text = part_texts.get(idx, "")
+        cand = ClipCandidate(start=start, end=end, text=text)
+        caption, tags = _make_caption_and_tags(cfg, idx, total, end - start, text=text)
         out_name = f"clip_{idx:02d}_s{start:.1f}_e{end:.1f}.mp4"
         out_path = str(out_dir / out_name)
         if cfg.vertical:
@@ -117,7 +163,7 @@ def process_serial(cfg: SerialConfig) -> PipelineResult:
             cutting.cut_clip(input_path, cand, out_path, bar=bar, offset=prefix)
         return ClipResult(
             path=out_path, start=start, end=end, duration=end - start,
-            score=0.0, text=cand.text, reason="serial", vertical=cfg.vertical,
+            score=0.0, text=text, reason="serial", vertical=cfg.vertical,
             hashtags=tags, caption=caption,
         )
 
