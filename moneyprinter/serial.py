@@ -81,7 +81,7 @@ def _make_caption_and_tags(cfg: SerialConfig, part_idx: int, total: int, duratio
     + тематика по тексту.
     """
     title_bit = cfg.series_title.strip() if cfg.series_title else "Сериал"
-    header = f"{title_bit} | Серия {cfg.episode} | Часть {part_idx}/{total}"
+    header = f"{title_bit} | Серия {cfg.episode} | Часть {part_idx}"
     hook = hashtags_mod.generate_hook(
         text, llm_model=cfg.llm_model, llm_url=cfg.llm_url, limit=120
     )
@@ -140,7 +140,10 @@ def process_serial(cfg: SerialConfig) -> PipelineResult:
         except Exception as exc:
             print(f"[warn] Транскрипция недоступна ({exc}). Описания будут без крючка по содержанию.")
     else:
-        print("[warn] Нет аудиодорожки — описания по содержанию не будут сгенерированы.")
+        if not cfg.transcribe_audio:
+            print("[i] Транскрипция отключена (--no-audio-desc) — описания без крючка по содержанию.")
+        else:
+            print("[warn] Нет аудиодорожки — описания по содержанию не будут сгенерированы.")
 
     # Считаем хронометраж для единого прогресс-бара
     total_dur = sum(e - s for _, s, e in parts)
@@ -207,3 +210,99 @@ def process_serial(cfg: SerialConfig) -> PipelineResult:
                              " ".join(f"#{t}" for t in c.hashtags), c.caption])
 
     return result
+
+
+def regenerate_captions(
+    input_path: str,
+    output_dir: str = "clips",
+    series_title: str = "",
+    episode: int = 1,
+    base_hashtags: list = None,
+    whisper_model: str = "base",
+    device: str = "auto",
+    language: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    llm_url: Optional[str] = None,
+    auto_install: bool = True,
+    jobs: int = 0,
+) -> int:
+    """Перегенерирует описания/хештеги для уже нарезанных клипов.
+
+    Читает report.json в output_dir (там лежат start/end каждого клипа),
+    заново транскрибирует исходник и переписывает caption+hashtags у каждого
+    клипа, сохраняя сами видеофайлы. Возвращает число обновлённых клипов.
+    """
+    import csv
+    import json as _json
+    import tempfile
+
+    from . import transcribe as transcribe_mod
+
+    out_dir = Path(output_dir)
+    report = out_dir / "report.json"
+    if not report.exists():
+        raise RuntimeError(f"Не найден {report}. Сначала выполните `moneyprinter serial`.")
+
+    data = _json.loads(report.read_text(encoding="utf-8"))
+    clips = data.get("clips", [])
+    if not clips:
+        print("[i] В отчёте нет клипов.")
+        return 0
+
+    info = media.probe(input_path)
+    jobs = jobs or os.cpu_count() or 1
+
+    # Переписываем конфиг из данных клипов (если есть series_title и т.п.)
+    cfg = SerialConfig(
+        input_path=input_path,
+        output_dir=output_dir,
+        series_title=series_title or "",
+        episode=episode,
+        base_hashtags=base_hashtags,
+        whisper_model=whisper_model,
+        device=device,
+        language=language,
+        llm_model=llm_model,
+        llm_url=llm_url,
+        auto_install=auto_install,
+    )
+
+    # Транскрипция один раз
+    print("[i] Транскрибирую исходник для перегенерации описаний...")
+    with tempfile.TemporaryDirectory(prefix="moneyprinter_regen_") as tmp:
+        wav = media.decode_audio_wav(input_path, str(Path(tmp) / "audio.wav"))
+        segs = transcribe_mod.transcribe(
+            wav, model_name=whisper_model, device=device, language=language,
+            auto_install=auto_install, duration=info.duration, jobs=jobs,
+        )
+
+    def _text_for(start: float, end: float) -> str:
+        return " ".join(
+            s.text.strip() for s in segs if s.start >= start and s.end <= end
+        ).strip()
+
+    total = len(clips)
+    for cli in clips:
+        start, end = float(cli["start"]), float(cli["end"])
+        text = _text_for(start, end)
+        # для подписи нужен реальный номер части — берём из имени файла clip_XX
+        import re as _re
+        m = _re.search(r"clip_(\d+)", Path(cli["path"]).name)
+        part_idx = int(m.group(1)) if m else 0
+        cap, tags = _make_caption_and_tags(cfg, part_idx, total, end - start, text=text)
+        cli["text"] = text
+        cli["hashtags"] = tags
+        cli["caption"] = cap
+
+    # Сохраняем обратно
+    report.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    csv_path = out_dir / "report.csv"
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["file", "start", "end", "duration", "text", "hashtags", "caption"])
+        for c in clips:
+            writer.writerow([c["path"], f"{c['start']:.2f}", f"{c['end']:.2f}", f"{c['duration']:.2f}",
+                             c.get("text", ""), " ".join(f"#{t}" for t in c.get("hashtags", [])), c.get("caption", "")])
+
+    print(f"[✓] Обновлено описаний: {total} → {output_dir}")
+    return total

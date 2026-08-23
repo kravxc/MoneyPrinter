@@ -32,8 +32,9 @@ def test_build_parts_shorter_than_part():
 def test_caption_includes_part_numbers():
     cfg = serial.SerialConfig(input_path="x.mp4", series_title="Уроки химии", episode=1)
     caption, tags = serial._make_caption_and_tags(cfg, part_idx=3, total=12, duration=60.0)
-    assert "Часть 3/12" in caption
+    assert "Часть 3" in caption
     assert "Серия 1" in caption
+    assert "/12" not in caption  # формат "Часть N", без N/Y
     tags_str = " ".join(f"#{t}" for t in tags)
     assert "химии" in tags_str  # тематический тег по названию сериала
 
