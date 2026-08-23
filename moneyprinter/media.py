@@ -3,12 +3,39 @@
 from __future__ import annotations
 
 import json
+import locale
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
 from .models import VideoInfo
+
+
+def _system_encoding() -> str:
+    """Кодировка вывода внешних программ (ffmpeg) в текущей ОС.
+
+    На Windows ffmpeg пишет в OEM-кодировке (обычно cp866), из-за чего
+    русский текст превращается в «кракозябры», если декодировать как UTF-8.
+    """
+    enc = locale.getpreferredencoding(False)
+    if enc and enc.lower().startswith("cp"):
+        return enc
+    if sys.platform == "win32":
+        return "cp866"
+    return enc or "utf-8"
+
+
+def _decode(raw: bytes) -> str:
+    """Декодирует вывод внешней программы без «кракозябр»."""
+    if not raw:
+        return ""
+    enc = _system_encoding()
+    try:
+        return raw.decode(enc, errors="replace")
+    except (LookupError, UnicodeError):
+        return raw.decode("utf-8", errors="replace")
 
 
 class FFmpegError(RuntimeError):
@@ -35,7 +62,7 @@ def run_with_progress(
     cmd = list(cmd) + ["-progress", "pipe:1", "-nostats"]
     try:
         proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=False
         )
     except FileNotFoundError:
         raise FFmpegError(f"Команда не найдена: {cmd[0]}. Установите ffmpeg.") from None
@@ -45,7 +72,8 @@ def run_with_progress(
         bar = tqdm(total=total, desc=desc, unit="s", disable=disable or total <= 0)
 
     try:
-        for line in proc.stdout:
+        for raw_line in proc.stdout:
+            line = _decode(raw_line)
             if line.startswith("out_time_ms="):
                 try:
                     secs = int(line.split("=", 1)[1].strip()) / 1_000_000
@@ -58,10 +86,11 @@ def run_with_progress(
         if own:
             bar.close()
 
-    stderr = proc.stderr.read()
+    stderr = _decode(proc.stderr.read())
+    leftover_txt = _decode(leftover)
     proc.wait()
     if proc.returncode != 0:
-        tail = (stderr or leftover or "")[-2000:]
+        tail = (stderr or leftover_txt or "")[-2000:]
         raise FFmpegError(f"Команда завершилась с ошибкой {proc.returncode}:\n{tail}")
     return stderr
 
@@ -71,16 +100,19 @@ def _run(cmd: list, *, check: bool = True, capture: bool = True) -> subprocess.C
     try:
         result = subprocess.run(
             cmd,
-            capture_output=capture,
-            text=True,
+            stdout=subprocess.PIPE if capture else None,
+            stderr=subprocess.PIPE if capture else None,
+            text=False,
             check=False,
         )
     except FileNotFoundError:
         raise FFmpegError(f"Команда не найдена: {cmd[0]}. Установите ffmpeg.") from None
+    stdout = _decode(result.stdout) if capture else ""
+    stderr = _decode(result.stderr) if capture else ""
     if check and result.returncode != 0:
-        tail = (result.stderr or result.stdout or "")[-2000:]
+        tail = (stderr or stdout or "")[-2000:]
         raise FFmpegError(f"Команда завершилась с ошибкой {result.returncode}:\n{tail}")
-    return result
+    return subprocess.CompletedProcess(result.args, result.returncode, stdout, stderr)
 
 
 def require_ffmpeg() -> None:
