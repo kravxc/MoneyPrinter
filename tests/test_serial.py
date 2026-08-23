@@ -53,3 +53,11 @@ def test_build_parts_uses_random_65_70_range():
     assert len(parts) >= 5
     for _, s, e in parts[:-1]:  # кроме последнего (остаток)
         assert 65.0 <= (e - s) <= 70.0 + 1e-6
+
+
+def test_episode_dir_naming():
+    assert serial._episode_dir("Уроки химии", 1) == "Уроки химии/S01"
+    assert serial._episode_dir("Detective Story", 12) == "Detective Story/S12"
+    # опасные символы вырезаются
+    assert ":" not in serial._episode_dir("Сериал: Х", 3)
+    assert "*" not in serial._episode_dir("Сериал*", 3)
