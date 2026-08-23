@@ -8,6 +8,7 @@
 """
 
 from __future__ import annotations
+import re
 
 import json
 import os
@@ -47,6 +48,21 @@ class SerialConfig:
     llm_url: Optional[str] = None
     auto_install: bool = True
     transcribe_audio: bool = True     # если False — описания без крючка по содержанию
+
+
+
+def _safe_name(name: str) -> str:
+    """Превращает название в безопасное имя папки (без /\:*?<>| и лишних пробелов)."""
+    name = (name or "").strip()
+    name = re.sub(r'[\\/:*?"<>|]', "", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    return name or "serial"
+
+
+def _episode_dir(series_title: str, episode: int) -> str:
+    """Путь к папке эпизода: <Название сериала>/S<NN>/."""
+    title = _safe_name(series_title)
+    return os.path.join(title, f"S{episode:02d}")
 
 
 def _build_parts(cfg: SerialConfig, duration: float) -> list:
@@ -111,7 +127,12 @@ def _make_caption_and_tags(cfg: SerialConfig, part_idx: int, total: int, duratio
 def process_serial(cfg: SerialConfig) -> PipelineResult:
     media.require_ffmpeg()
     input_path = str(cfg.input_path)
-    out_dir = Path(cfg.output_dir)
+    # Если output_dir не меняли с дефолтного "clips" — раскладываем по
+    # <Название сериала>/S<NN>/, чтобы разные сериалы/серии не мешались.
+    out_dir_str = cfg.output_dir
+    if out_dir_str == "clips" and (cfg.series_title or cfg.episode != 1):
+        out_dir_str = _episode_dir(cfg.series_title, cfg.episode)
+    out_dir = Path(out_dir_str)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     info = media.probe(input_path)

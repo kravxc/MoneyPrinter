@@ -287,9 +287,13 @@ def _cmd_serial(args: argparse.Namespace) -> int:
 
 
 def _cmd_regen(args: argparse.Namespace) -> int:
+    output_dir = args.output
+    if output_dir == "clips" and (args.series_title or args.episode != 1):
+        from moneyprinter import serial as _serial
+        output_dir = _serial._episode_dir(args.series_title, args.episode)
     n = serial_mod.regenerate_captions(
         input_path=args.input,
-        output_dir=args.output,
+        output_dir=output_dir,
         series_title=args.series_title,
         episode=args.episode,
         base_hashtags=args.base_hashtag or None,
