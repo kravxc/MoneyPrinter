@@ -83,10 +83,10 @@ def _make_caption_and_tags(cfg: SerialConfig, part_idx: int, total: int, duratio
     title_bit = cfg.series_title.strip() if cfg.series_title else "Сериал"
     header = f"{title_bit} | Серия {cfg.episode} | Часть {part_idx}"
     hook = hashtags_mod.generate_hook(
-        text, llm_model=cfg.llm_model, llm_url=cfg.llm_url, limit=70
+        text, llm_model=cfg.llm_model, llm_url=cfg.llm_url, limit=60
     )
-    snippet = (hook + "\n\n") if hook else ""
-    snippet += f"⏱ {duration:.0f} сек. Продолжение — следующим роликом 👉"
+    # формат: «Кто отравил пробирку?🧪🔍 Смотри до конца.»
+    snippet = (hook + " " if hook else "") + "Смотри до конца."
     # теги: по названию сериала + по содержанию части
     tags_text = f"{title_bit} серия {cfg.episode} {text}"
     tags = hashtags_mod.generate_hashtags(
