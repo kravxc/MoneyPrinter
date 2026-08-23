@@ -36,6 +36,12 @@ def test_generate_hook_fallback_picks_interesting_sentence():
     assert "пробирку" in hook
 
 
+def test_generate_hook_is_short():
+    text = "Обычный день. Кто отравил пробирку и зачем он это сделал в лаборатории при свете фонаря?" * 3
+    hook = hashtags.generate_hook(text, llm_model=None, limit=70)
+    assert len(hook) <= 70
+
+
 def test_generate_hook_empty_text():
     assert hashtags.generate_hook("", llm_model=None) == ""
 
