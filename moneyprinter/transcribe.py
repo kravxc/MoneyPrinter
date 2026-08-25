@@ -23,6 +23,38 @@ from tqdm import tqdm
 
 from .models import TimestampedText
 
+import contextlib
+import io as _io
+
+class _SilenceHF(contextlib.AbstractContextManager):
+    """Глушит служебный «шум» HF Hub в stderr (сообщения про unauthenticated
+    requests / symlinks), перехватывая запись в sys.stderr."""
+
+    _NOISE = ("unauthenticated requests to the HF Hub",
+              "cache-system uses symlinks",
+              "HF_HUB_DISABLE_SYMLINKS_WARNING",
+              "enable-your-device-for-development")
+
+    def __enter__(self):
+        self._real = sys.stderr
+        self._buf = _io.StringIO()
+        sys.stderr = self._buf
+        return self
+
+    def __exit__(self, *exc):
+        sys.stderr = self._real
+        text = self._buf.getvalue()
+        for line in text.splitlines():
+            if not any(n in line for n in self._NOISE):
+                print(line, file=self._real)
+        return False
+
+
+@contextlib.contextmanager
+def silence_hf():
+    with _SilenceHF():
+        yield
+
 # --- Глушим «шум» в консоли (предупреждения HF, логи faster-whisper) ---
 import logging as _logging
 # отключаем warning-сообщения HuggingFace (HF_TOKEN, symlinks и т.п.)
@@ -196,18 +228,20 @@ def _init_worker(model_name: str, language: Optional[str]) -> None:
     global _worker_model, _worker_language
     from faster_whisper import WhisperModel
 
-    _worker_model = WhisperModel(model_name, device="cpu", compute_type="int8", verbose=False)
+    with silence_hf():
+        _worker_model = WhisperModel(model_name, device="cpu", compute_type="int8", verbose=False)
     _worker_language = language
 
 
 def _transcribe_chunk(task: Tuple[str, float, float]) -> List[Tuple[float, float, str, float]]:
     """Транскрибирует один чанк; возвращает сегменты в абсолютном времени."""
     wav_path, offset, _coverage = task
-    segs, _ = _worker_model.transcribe(
-        wav_path,
-        vad_filter=True,
-        language=_worker_language,
-    )
+    with silence_hf():
+        segs, _ = _worker_model.transcribe(
+            wav_path,
+            vad_filter=True,
+            language=_worker_language,
+        )
     return [
         (offset + float(s.start), offset + float(s.end), s.text, float(s.no_speech_prob))
         for s in segs
@@ -292,11 +326,13 @@ def _transcribe_faster_whisper(
 
     compute_type = "float16" if device == "cuda" else "int8"
     try:
-        model = WhisperModel(model_name, device=device, compute_type=compute_type, verbose=False)
+        with silence_hf():
+            model = WhisperModel(model_name, device=device, compute_type=compute_type, verbose=False)
         kwargs = {"vad_filter": True}
         if language:
             kwargs["language"] = language
-        segments_iter, _ = model.transcribe(audio_path, **kwargs)
+        with silence_hf():
+            segments_iter, _ = model.transcribe(audio_path, **kwargs)
 
         bar = tqdm(
             total=duration if duration and duration > 0 else None,
@@ -352,7 +388,8 @@ def _transcribe_openai_whisper(
     kwargs = {"fp16": False}
     if language:
         kwargs["language"] = language
-    result = model.transcribe(audio_path, **kwargs)
+    with silence_hf():
+        result = model.transcribe(audio_path, **kwargs)
 
     segments: List[TimestampedText] = []
     for seg in result.get("segments", []):
