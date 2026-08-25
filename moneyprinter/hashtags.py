@@ -11,44 +11,88 @@ from __future__ import annotations
 import re
 from typing import List, Optional
 
-# Базовый набор — не зависит от содержимого, даёт охват по платформе/жанру
+# Базовый набор — самые популярные, реально используемые теги TikTok/Shorts
+# (высокий охват, не «банные»). Всегда добавляются для видимости.
 BASE_HASHTAGS = [
+    "fyp",          # самый популярный тег TikTok (For You Page)
+    "foryou",       # вторая вариация fyp
+    "foryoupage",
+    "viral",
+    "trending",
     "shorts",
     "тикток",
+    "тренд",
+    "вирусное",
     "фильм",
     "сериал",
-    "момент",
+    "кино",
 ]
 
-# Языковые маркеры → теги (простая эвристика, если нет LLM)
-_TOPIC_TAGS_RU = [
-    ("смех", "смешно"),
-    ("шутк", "шутка"),
-    ("любов", "любовь"),
-    ("драм", "драма"),
-    ("ужас", "ужасы"),
-    ("боев", "боевик"),
-    ("реакц", "реакция"),
-    ("топ", "топ"),
-    ("офиг", "офигенно"),
-    ("жесть", "жесть"),
-    ("игра", "игры"),
-    ("спорт", "спорт"),
-    ("музык", "музыка"),
-    ("дет", "дети"),
-    ("семь", "семья"),
-]
-_TOPIC_TAGS_EN = [
-    ("funny", "funny"),
-    ("lol", "lol"),
-    ("love", "love"),
-    ("drama", "drama"),
-    ("scary", "scary"),
-    ("fight", "fight"),
-    ("best", "best"),
-    ("game", "gaming"),
-    ("music", "music"),
-    ("sport", "sport"),
+# Реально популярные теги по темам (используются миллионами роликов).
+# Ключевое слово из текста → список готовых популярных тегов.
+_TOPIC_TAGS = [
+    # жанры / настроение
+    ("смех", ["смешно", "прикол", "комедия", "funny", "humor", "lol"]),
+    ("шутк", ["шутка", "прикол", "комедия", "funny"]),
+    ("любов", ["любовь", "романтика", "romance", "love"]),
+    ("драм", ["драма", "melodrama", "drama"]),
+    ("ужас", ["ужасы", "хоррор", "scary", "horror"]),
+    ("страх", ["ужасы", "хоррор", "scary", "horror"]),
+    ("боев", ["боевик", "экшн", "action", "fight"]),
+    ("детектив", ["детектив", "mystery", "crime"]),
+    ("убийств", ["детектив", "mystery", "crime"]),
+    ("тайна", ["тайна", "mystery"]),
+    ("загадк", ["загадка", "mystery"]),
+    ("полиц", ["полиция", "crime", "detective"]),
+    ("суд", ["суд", "law", "crime"]),
+    ("преступл", ["криминал", "crime", "detective"]),
+    ("триллер", ["триллер", "thriller", "suspense"]),
+    ("хими", ["наука", "chemistry", "science", "школа"]),
+    ("лаборатор", ["наука", "chemistry", "experiment"]),
+    ("наука", ["наука", "science", "knowledge"]),
+    ("школ", ["школа", "учеба", "school", "study"]),
+    ("учеб", ["учеба", "school", "study", "знания"]),
+    ("университет", ["университет", "study", "school"]),
+    ("студент", ["студент", "study", "university"]),
+    ("игра", ["игры", "gaming", "gameplay", "gamer"]),
+    ("спорт", ["спорт", "sport", "fitness", "workout"]),
+    ("футбол", ["футбол", "football", "sport"]),
+    ("музык", ["музыка", "music", "song", "песня"]),
+    ("песн", ["музыка", "music", "song"]),
+    ("танц", ["танцы", "dance", "trend"]),
+    ("еда", ["еда", "food", "recipe", "готовка"]),
+    ("готов", ["готовка", "food", "recipe", "cooking"]),
+    ("путешест", ["путешествия", "travel", "vlog"]),
+    ("животн", ["животные", "pets", "cute", "cats", "dogs"]),
+    ("кошк", ["котики", "cats", "pets", "cute"]),
+    ("собак", ["собаки", "dogs", "pets", "cute"]),
+    ("дет", ["дети", "kids", "family"]),
+    ("семь", ["семья", "family", "mom", "dad"]),
+    ("беремен", ["беременность", "mom", "baby", "family"]),
+    ("свадьб", ["свадьба", "wedding", "love"]),
+    ("красот", ["красота", "beauty", "makeup", "skincare"]),
+    ("макияж", ["макияж", "makeup", "beauty"]),
+    ("мода", ["мода", "fashion", "style", "outfit"]),
+    ("авто", ["авто", "cars", "car", "drive"]),
+    ("машина", ["авто", "cars", "car"]),
+    ("технолог", ["технологии", "tech", "gadget"]),
+    ("телефон", ["технологии", "tech", "smartphone"]),
+    ("космос", ["космос", "space", "universe"]),
+    ("истор", ["история", "history", "facts"]),
+    ("факт", ["факты", "facts", "знания", "knowledge"]),
+    ("совет", ["советы", "lifehack", "tips", "hack"]),
+    ("лайфхак", ["лайфхак", "lifehack", "tips"]),
+    ("реакц", ["реакция", "reaction", "react"]),
+    ("обзор", ["обзор", "review", "разбор"]),
+    ("разбор", ["разбор", "review", "аналитика"]),
+    # универсальные «виральные» маркеры
+    ("ого", ["шок", "wow", "amazing"]),
+    ("вау", ["шок", "wow", "amazing"]),
+    ("шок", ["шок", "wow", "amazing", "unbelievable"]),
+    ("офиг", ["шок", "wow", "insane"]),
+    ("жесть", ["шок", "crazy", "insane"]),
+    ("топ", ["топ", "best", "top"]),
+    ("лучш", ["лучшее", "best", "top"]),
 ]
 
 
@@ -63,13 +107,18 @@ def _clean_tag(tag: str) -> Optional[str]:
 
 
 def _keyword_fallback(text: str, limit: int) -> List[str]:
-    """Эвристика без LLM: теги по ключевым словам + частым словам текста."""
+    """Эвристика без LLM: популярные теги по теме текста + частые слова."""
     low = (text or "").lower()
     tags: List[str] = []
-    for needle, tag in _TOPIC_TAGS_RU + _TOPIC_TAGS_EN:
-        if needle in low and tag not in tags:
-            tags.append(tag)
-    # частые осмысленные слова (длина >= 4)
+    # готовые популярные теги по теме
+    for needle, tags_list in _TOPIC_TAGS:
+        if needle in low:
+            for t in tags_list:
+                if t not in tags:
+                    tags.append(t)
+        if len(tags) >= limit:
+            break
+    # недобор — частые осмысленные слова (длина >= 4)
     words = re.findall(r"[a-zа-яё]{4,}", low, flags=re.UNICODE)
     stop = {
         "этот", "такой", "котор", "потом", "сейчас", "здесь", "там", "говор",
@@ -81,9 +130,11 @@ def _keyword_fallback(text: str, limit: int) -> List[str]:
         if w in stop:
             continue
         freq[w] = freq.get(w, 0) + 1
-    for w, _ in sorted(freq.items(), key=lambda kv: kv[1], reverse=True)[:limit]:
+    for w, _ in sorted(freq.items(), key=lambda kv: kv[1], reverse=True):
         if w not in tags:
             tags.append(w)
+        if len(tags) >= limit:
+            break
     return tags[:limit]
 
 
@@ -146,7 +197,8 @@ def generate_hashtags(
     for t in smart:
         if t not in out:
             out.append(t)
-    return out
+    # итоговый лимит, чтобы не выглядело спамом (TikTok любит 8-15 тегов)
+    return out[:18]
 
 
 def build_caption(text: str, hashtags: List[str], max_chars: int = 2000) -> str:
@@ -171,13 +223,20 @@ def _extract_hook_fallback(text: str, limit: int = 70) -> str:
     sentences = [s.strip(" -\t") for s in sentences if len(s.strip()) >= 4]
     if not sentences:
         return (text or "").strip()[:limit]
-    # приоритет — фразы с «удержанием» (вопросы/интрига)
+    # приоритет — короткие фразы с «удержанием» (вопросы/интрига)
+    candidates = []
     for needle in ("кто", "почему", "зачем", "что", "где", "как", "?", "смех", "ха",
-                   "lol", "ого", "вау", "шок", "ужас", "правда", "тайна", "загадк"):
-        for s in sentences:
-            if needle in s.lower():
-                return s[:limit]
-    return max(sentences, key=len)[:limit]
+                   "lol", "ого", "вау", "шок", "ужас", "правда", "тайна", "загадк",
+                   "отрав", "убийств", "пропал", "нашёл", "секрет", "разгадк"):
+        for sent in sentences:
+            if needle in sent.lower():
+                candidates.append(sent)
+    if candidates:
+        # самая короткая из подходящих
+        return min(candidates, key=len)[:limit]
+    if sentences:
+        return min(sentences, key=len)[:limit]
+    return (text or "").strip()[:limit]
 
 
 # Эмодзи под настроение/тематику (добавляется в конец крючка)
@@ -229,10 +288,12 @@ def generate_hook(
             return _extract_hook_fallback(text, limit) + emoji
         client = ollama.Client(host=llm_url) if llm_url else ollama
         prompt = (
-            "Ты — редактор TikTok. Сформулируй ОДИН короткий крючок по тексту "
-            "видео: всего 2-4 слова (вопрос или интрига), чтобы зритель досмотрел. "
+            "Ты — топовый редактор TikTok-шортсов. Придумай ОДИН цепляющий крючок "
+            "по тексту видео, строго по его ТЕМЕ/сюжету (не общие фразы): "
+            "короткий вопрос, интрига или неожиданный факт из этого куска, 2-5 слов, "
+            "чтобы зритель обязательно досмотрел до конца. "
             f"Строго до {limit} символов, на языке текста, без хештегов и кавычек. "
-            "В конце обязательно поставь 1-2 подходящих эмодзи.\n"
+            "В конце поставь 1-2 уместных эмодзи.\n"
             f"Текст: {text!r}\nКрючок:"
         )
         try:

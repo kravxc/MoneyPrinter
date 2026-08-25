@@ -117,8 +117,13 @@ def _make_caption_and_tags(cfg: SerialConfig, part_idx: int, total: int, duratio
     snippet = (hook + " " if hook else "") + "Смотри до конца."
     # теги: по названию сериала + по содержанию части
     tags_text = f"{title_bit} серия {cfg.episode} {text}"
+    base_tags = list(cfg.base_hashtags or [])
+    # добавляем «чистый» слаг названия сериала как тематический тег
+    series_slug = re.sub(r"[^\wа-яё]+", "", title_bit.lower())
+    if series_slug:
+        base_tags.append(series_slug)
     tags = hashtags_mod.generate_hashtags(
-        tags_text, base=cfg.base_hashtags or []
+        tags_text, base=base_tags
     )
     caption = f"{header}\n\n{snippet}\n\n" + " ".join(f"#{t}" for t in tags)
     return caption, tags
@@ -135,7 +140,41 @@ def process_serial(cfg: SerialConfig) -> PipelineResult:
     out_dir = Path(out_dir_str)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    report = out_dir / "report.json"
+    csv_path = out_dir / "report.csv"
+
+    def _to_jsonable(obj):
+        if hasattr(obj, "__dict__"):
+            return {k: _to_jsonable(v) for k, v in obj.__dict__.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_to_jsonable(v) for v in obj]
+        return obj
+
+    def _write_report(clips, partial: bool = False):
+        """Сохраняет report.json (и report.csv) сразу — даже при partial=True,
+        чтобы при принудительной остановке (Ctrl+C) данные не терялись."""
+        data = {
+            "input_path": input_path,
+            "duration": info.duration if "info" in dir() else None,
+            "series_title": cfg.series_title,
+            "episode": cfg.episode,
+            "total_parts": total if "total" in dir() else None,
+            "partial": partial,
+            "clips": [_to_jsonable(c) for c in clips],
+        }
+        report.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        import csv as _csv
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            w = _csv.writer(f)
+            w.writerow(["file", "start", "end", "duration", "text", "hashtags", "caption"])
+            for c in clips:
+                w.writerow([c.path, f"{c.start:.2f}", f"{c.end:.2f}", f"{c.duration:.2f}",
+                            c.text, " ".join(f"#{t}" for t in c.hashtags), c.caption])
+
     info = media.probe(input_path)
+    result = PipelineResult(input_path=input_path, duration=info.duration)
+    _write_report([], partial=True)
+    print(f"[i] Отчёт создан: {report}")
     result = PipelineResult(input_path=input_path, duration=info.duration)
     jobs = cfg.jobs or os.cpu_count() or 1
 
@@ -206,41 +245,33 @@ def process_serial(cfg: SerialConfig) -> PipelineResult:
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     clips = [None] * len(parts)
+    done = []
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         futures = {
             pool.submit(_worker, idx, s, e, prefixes[i]): i
             for i, (idx, s, e) in enumerate(parts)
         }
-        for fut in as_completed(futures):
-            i = futures[fut]
-            clip = fut.result()
-            clips[i] = clip
-            print(f"  ✓ {Path(clip.path).name}  [{clip.start:7.1f}s → {clip.end:7.1f}s]  «{clip.caption[:55]}»")
+        try:
+            for fut in as_completed(futures):
+                i = futures[fut]
+                clip = fut.result()
+                clips[i] = clip
+                done.append(clip)
+                print(f"  ✓ {Path(clip.path).name}  [{clip.start:7.1f}s → {clip.end:7.1f}s]  «{clip.caption[:55]}»")
+                # дописываем отчёт после КАЖДОГО клипа
+                _write_report([c for c in clips if c is not None], partial=True)
+        except KeyboardInterrupt:
+            bar.close()
+            print("\n[!] Прервано. Сохраняю то, что успело нарезаться...")
+            _write_report([c for c in clips if c is not None], partial=True)
+            raise
     bar.close()
 
     result.clips = [c for c in clips if c is not None]
     # уже по порядку (индексы по частям), но на всякий сортируем по start
     result.clips.sort(key=lambda c: c.start)
 
-    # Отчёт
-    report = out_dir / "report.json"
-
-    def _to_jsonable(obj):
-        if hasattr(obj, "__dict__"):
-            return {k: _to_jsonable(v) for k, v in obj.__dict__.items()}
-        if isinstance(obj, (list, tuple)):
-            return [_to_jsonable(v) for v in obj]
-        return obj
-
-    report.write_text(json.dumps(_to_jsonable(result), ensure_ascii=False, indent=2), encoding="utf-8")
-    import csv
-    csv_path = out_dir / "report.csv"
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["file", "start", "end", "duration", "text", "hashtags", "caption"])
-        for c in result.clips:
-            writer.writerow([c.path, f"{c.start:.2f}", f"{c.end:.2f}", f"{c.duration:.2f}", c.text,
-                             " ".join(f"#{t}" for t in c.hashtags), c.caption])
+    _write_report(result.clips, partial=False)
 
     return result
 
