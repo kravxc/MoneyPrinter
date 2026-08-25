@@ -25,7 +25,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_run = sub.add_parser("process", help="Обработать видео и нарезать клипы")
     p_run.add_argument("input", help="Путь к видеофайлу")
-    p_run.add_argument("-o", "--output", default="clips", help="Папка для клипов (default: clips)")
+    p_run.add_argument("-o", "--output", default="cuts", help="Папка для клипов (default: clips)")
     p_run.add_argument("-n", "--max-clips", type=int, default=10, help="Сколько клипов сделать (default: 10)")
     p_run.add_argument("--min-duration", type=float, default=60.0, help="Мин. длина клипа, сек (default: 60 — минимум для сериалов/фильмов)")
     p_run.add_argument("--max-duration", type=float, default=180.0, help="Макс. длина клипа, сек (Shorts допускает до 180)")
@@ -88,7 +88,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_regen = sub.add_parser("regen-captions", help="Перегенерировать описания/хештеги для уже нарезанных клипов (по report.json)")
     p_regen.add_argument("input", help="Путь к исходному видеофайлу (сериал/эпизод)")
-    p_regen.add_argument("-o", "--output", default="clips", help="Папка с клипами и report.json")
+    p_regen.add_argument("-o", "--output", default="cuts", help="Папка с клипами и report.json")
     p_regen.add_argument("--series-title", default="", help="Название сериала")
     p_regen.add_argument("--episode", type=int, default=1, help="Номер серии")
     p_regen.add_argument("--base-hashtag", action="append", default=[], help="Доп. тег (можно несколько)")
@@ -105,7 +105,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def _add_serial_parser(sub) -> None:
     p = sub.add_parser("serial", help="Режим сериал/фильм: нарезать видео подряд по порядку на микро-серии")
     p.add_argument("input", help="Путь к видеофайлу (одна серия/эпизод)")
-    p.add_argument("-o", "--output", default="clips", help="Папка для клипов (default: clips)")
+    p.add_argument("-o", "--output", default="cuts", help="Папка для клипов (default: clips)")
     p.add_argument("--part-duration", type=float, default=67.5, help="Средняя длина микро-серии, сек (default: 67.5 ≈ 65-70)")
     p.add_argument("--part-min", type=float, default=65.0, help="Мин. длина части, сек (default: 65)")
     p.add_argument("--part-max", type=float, default=70.0, help="Макс. длина части, сек (default: 70)")
@@ -290,9 +290,9 @@ def _cmd_serial(args: argparse.Namespace) -> int:
 
 def _cmd_regen(args: argparse.Namespace) -> int:
     output_dir = args.output
-    if output_dir == "clips" and (args.series_title or args.episode != 1):
+    if output_dir == "cuts" and (args.series_title or args.episode != 1):
         from moneyprinter import serial as _serial
-        output_dir = _serial._episode_dir(args.series_title, args.episode)
+        output_dir = os.path.join("cuts", _serial._episode_dir(args.series_title, args.episode))
     n = serial_mod.regenerate_captions(
         input_path=args.input,
         output_dir=output_dir,
@@ -311,7 +311,21 @@ def _cmd_regen(args: argparse.Namespace) -> int:
     return 0
 
 
+def _quiet_warnings() -> None:
+    """Глушим сторонние warning-логи (HF, urllib3 и т.п.) в консоли."""
+    import logging as _l
+    import warnings as _w
+    _l.getLogger("huggingface_hub").setLevel(_l.ERROR)
+    _l.getLogger("urllib3").setLevel(_l.ERROR)
+    _w.filterwarnings("ignore", message=".*unauthenticated requests to the HF Hub.*")
+    _w.filterwarnings("ignore", message=".*symlinks by default.*")
+    _w.filterwarnings("ignore", message=".*cache-system uses symlinks.*")
+    os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+
+
 def main(argv=None) -> int:
+    _quiet_warnings()
     args = _build_parser().parse_args(argv)
     try:
         # Команды, работающие с TikTok, сами обеспечат наличие Playwright

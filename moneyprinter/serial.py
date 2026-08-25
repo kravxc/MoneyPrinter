@@ -28,7 +28,7 @@ from .models import ClipCandidate, ClipResult, PipelineResult
 @dataclass
 class SerialConfig:
     input_path: str
-    output_dir: str = "clips"
+    output_dir: str = "cuts"
     part_duration: float = 67.5       # средняя длина микро-серии, сек
     part_duration_min: float = 65.0   # минимальная длина части, сек
     part_duration_max: float = 70.0   # максимальная длина части, сек
@@ -132,11 +132,12 @@ def _make_caption_and_tags(cfg: SerialConfig, part_idx: int, total: int, duratio
 def process_serial(cfg: SerialConfig) -> PipelineResult:
     media.require_ffmpeg()
     input_path = str(cfg.input_path)
-    # Если output_dir не меняли с дефолтного "clips" — раскладываем по
-    # <Название сериала>/S<NN>/, чтобы разные сериалы/серии не мешались.
+    # Если output_dir не меняли с дефолтного "cuts" — раскладываем по
+    # cuts/<Название сериала>/S<NN>/, чтобы всё (сериалы/фильмы) лежало в
+    # одной папке-контейнере, а разные сериалы/серии не мешались.
     out_dir_str = cfg.output_dir
-    if out_dir_str == "clips" and (cfg.series_title or cfg.episode != 1):
-        out_dir_str = _episode_dir(cfg.series_title, cfg.episode)
+    if out_dir_str == "cuts" and (cfg.series_title or cfg.episode != 1):
+        out_dir_str = os.path.join("cuts", _episode_dir(cfg.series_title, cfg.episode))
     out_dir = Path(out_dir_str)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -278,7 +279,7 @@ def process_serial(cfg: SerialConfig) -> PipelineResult:
 
 def regenerate_captions(
     input_path: str,
-    output_dir: str = "clips",
+    output_dir: str = "cuts",
     series_title: str = "",
     episode: int = 1,
     base_hashtags: list = None,
