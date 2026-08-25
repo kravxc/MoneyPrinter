@@ -23,6 +23,40 @@ from tqdm import tqdm
 
 from .models import TimestampedText
 
+# --- Глушим «шум» в консоли (предупреждения HF, логи faster-whisper) ---
+import logging as _logging
+# отключаем warning-сообщения HuggingFace (HF_TOKEN, symlinks и т.п.)
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+try:
+    import warnings as _warnings
+    _warnings.filterwarnings("ignore", message=".*unauthenticated requests to the HF Hub.*")
+    _warnings.filterwarnings("ignore", message=".*symlinks by default.*")
+    _warnings.filterwarnings("ignore", message=".*cache-system uses symlinks.*")
+    _logging.getLogger("huggingface_hub").setLevel(_logging.ERROR)
+    _logging.getLogger("urllib3").setLevel(_logging.ERROR)
+    _logging.getLogger("faster_whisper").setLevel(_logging.ERROR)
+except Exception:
+    pass
+
+# --- Глушим «шум» в консоли (предупреждения HF, логи faster-whisper) ---
+import logging as _logging
+# отключаем warning-сообщения HuggingFace (HF_TOKEN, symlinks и т.п.)
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+try:
+    import warnings as _warnings
+    _warnings.filterwarnings("ignore", message=".*unauthenticated requests to the HF Hub.*")
+    _warnings.filterwarnings("ignore", message=".*symlinks by default.*")
+    _warnings.filterwarnings("ignore", message=".*cache-system uses symlinks.*")
+    # скрываем warning-логгер huggingface_hub
+    _logging.getLogger("huggingface_hub").setLevel(_logging.ERROR)
+    _logging.getLogger("urllib3").setLevel(_logging.ERROR)
+except Exception:
+    pass
+
 _MISSING_HINT = (
     "Whisper не установлен. Выполните: pip install 'moneyprinter[transcribe]' "
     "или pip install faster-whisper"
@@ -162,7 +196,7 @@ def _init_worker(model_name: str, language: Optional[str]) -> None:
     global _worker_model, _worker_language
     from faster_whisper import WhisperModel
 
-    _worker_model = WhisperModel(model_name, device="cpu", compute_type="int8")
+    _worker_model = WhisperModel(model_name, device="cpu", compute_type="int8", verbose=False)
     _worker_language = language
 
 
@@ -258,7 +292,7 @@ def _transcribe_faster_whisper(
 
     compute_type = "float16" if device == "cuda" else "int8"
     try:
-        model = WhisperModel(model_name, device=device, compute_type=compute_type)
+        model = WhisperModel(model_name, device=device, compute_type=compute_type, verbose=False)
         kwargs = {"vad_filter": True}
         if language:
             kwargs["language"] = language
