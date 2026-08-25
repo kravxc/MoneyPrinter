@@ -39,6 +39,14 @@ STEALTH_JS = (
     "window.navigator.chrome = {runtime: {}};"
     "Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3]});"
     "Object.defineProperty(navigator, 'languages', {get: () => ['ru-RU','ru','en']});"
+    # прячем фирменные маркеры Playwright (cdc_.*)
+    "const __proto = Object.getPrototypeOf(navigator);"
+    "delete __proto.webdriver;"
+    "for (const k of Object.getOwnPropertyNames(__proto)) {"
+    "  if (k.toLowerCase().includes('cdc') || k.toLowerCase().includes('playwright')) {"
+    "    try { delete __proto[k]; } catch (e) {}"
+    "  }"
+    "}"
 )
 
 
@@ -110,35 +118,74 @@ def load_cookies(path: str = DEFAULT_COOKIE_FILE) -> list:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def _launch(headed: bool, profile_dir: Optional[str] = None):
+def _launch(headed: bool, profile_dir: Optional[str] = None, prefer_chrome: bool = True):
     """Запускает браузер. Если задан profile_dir — использует persistent-профиль.
 
     Persistent-профиль критичен для входа через Google: в нём остаётся
     «живой» браузер, и Google не считает его автоматизированным/небезопасным.
+
+    По умолчанию пытаемся использовать реальный Google Chrome (channel="chrome"),
+    т.к. Google/TikTok доверяют ему гораздо больше, чем Playwright-Chromium, и
+    реже выдают «слишком много попыток». Если Chrome не установлен — фолбэк на
+    бандл Chromium с максимальным сокрытием автоматизации.
     """
     _require_playwright()
     from playwright.sync_api import sync_playwright
 
     pw = sync_playwright().start()
-    launch_args = ["--disable-blink-features=AutomationControlled"]
+    # убираем маркеры автоматизации из аргументов запуска
+    ignore_default = ["--enable-automation"]
+    launch_args = [
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+        "--disable-infobars",
+    ]
+
+    def _build_context(context_kwargs: dict):
+        context_kwargs.setdefault("viewport", {"width": 1280, "height": 900})
+        context_kwargs.setdefault("user_agent", USER_AGENT)
+        return context_kwargs
+
     if profile_dir:
         Path(profile_dir).mkdir(parents=True, exist_ok=True)
-        context = pw.chromium.launch_persistent_context(
-            profile_dir,
-            headless=False,  # вход через Google требует видимого браузера
-            args=launch_args,
-            viewport={"width": 1280, "height": 900},
-            user_agent=USER_AGENT,
-        )
-        context.add_init_script(STEALTH_JS)
-        browser = None  # persistent context сам управляет браузером
+        if prefer_chrome:
+            try:
+                context = pw.chromium.launch_persistent_context(
+                    profile_dir,
+                    channel="chrome",
+                    headless=False,
+                    ignore_default_args=ignore_default,
+                    args=launch_args,
+                    **_build_context({}),
+                )
+                print("[i] Запущен реальный Google Chrome (меньше риск блокировки).")
+            except Exception as exc:
+                print(f"[i] Chrome недоступен ({exc}); запускаю Playwright Chromium.")
+                context = pw.chromium.launch_persistent_context(
+                    profile_dir,
+                    headless=False,
+                    ignore_default_args=ignore_default,
+                    args=launch_args,
+                    **_build_context({}),
+                )
+        else:
+            context = pw.chromium.launch_persistent_context(
+                profile_dir,
+                headless=False,
+                ignore_default_args=ignore_default,
+                args=launch_args,
+                **_build_context({}),
+            )
+        browser = None
     else:
-        browser = pw.chromium.launch(headless=not headed, args=launch_args)
-        context = browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            user_agent=USER_AGENT,
+        browser = pw.chromium.launch(
+            headless=not headed,
+            ignore_default_args=ignore_default,
+            args=launch_args,
         )
-        context.add_init_script(STEALTH_JS)
+        context = browser.new_context(**_build_context({}))
+
+    context.add_init_script(STEALTH_JS)
     return pw, browser, context
 
 
@@ -147,6 +194,7 @@ def interactive_login(
     profile_dir: str = DEFAULT_PROFILE_DIR,
     timeout: int = 300,
     force_new: bool = False,
+    prefer_chrome: bool = True,
 ) -> None:
     """Открывает TikTok в persistent-профиле, ждёт ручного входа (в т.ч. через Google).
 
@@ -156,7 +204,7 @@ def interactive_login(
     """
     if force_new and os.path.isdir(profile_dir):
         shutil.rmtree(profile_dir, ignore_errors=True)
-    pw, browser, context = _launch(headed=True, profile_dir=profile_dir)
+    pw, browser, context = _launch(headed=True, profile_dir=profile_dir, prefer_chrome=prefer_chrome)
     try:
         page = context.new_page()
         print(f"[i] Открываю {UPLOAD_URL}. Войдите в аккаунт вручную (QR / Google / телефон).")
@@ -194,7 +242,7 @@ def upload_video(
     """
     _require_playwright()
     cookies = load_cookies(cookie_path)
-    pw, browser, context = _launch(headed)
+    pw, browser, context = _launch(headed, prefer_chrome=True)
     try:
         context.add_cookies(cookies)
         page = context.new_page()

@@ -52,6 +52,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_login.add_argument("--cookie", default=upload_mod.DEFAULT_COOKIE_FILE, help="Куда сохранить cookies")
     p_login.add_argument("--profile", default=upload_mod.DEFAULT_PROFILE_DIR, help="Каталог persistent-профиля браузера (для входа через Google)")
     p_login.add_argument("--force-new", action="store_true", help="Стереть старый профиль и войти заново")
+    p_login.add_argument("--no-chrome", action="store_true", help="Не использовать реальный Chrome (взять Playwright Chromium)")
 
     p_publish = sub.add_parser("publish", help="Выложить видео в TikTok (один файл или папку)")
     p_publish.add_argument("path", help="Видеофайл или папка с клипами")
@@ -150,7 +151,8 @@ def _collect_videos(path: str) -> list:
 
 def _cmd_login(args: argparse.Namespace) -> int:
     upload_mod.interactive_login(
-        path=args.cookie, profile_dir=args.profile, force_new=args.force_new
+        path=args.cookie, profile_dir=args.profile, force_new=args.force_new,
+        prefer_chrome=not args.no_chrome,
     )
     return 0
 
