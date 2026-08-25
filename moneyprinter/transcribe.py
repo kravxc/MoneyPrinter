@@ -229,7 +229,7 @@ def _init_worker(model_name: str, language: Optional[str]) -> None:
     from faster_whisper import WhisperModel
 
     with silence_hf():
-        _worker_model = WhisperModel(model_name, device="cpu", compute_type="int8", verbose=False)
+        _worker_model = WhisperModel(model_name, device="cpu", compute_type="int8")
     _worker_language = language
 
 
@@ -327,7 +327,7 @@ def _transcribe_faster_whisper(
     compute_type = "float16" if device == "cuda" else "int8"
     try:
         with silence_hf():
-            model = WhisperModel(model_name, device=device, compute_type=compute_type, verbose=False)
+            model = WhisperModel(model_name, device=device, compute_type=compute_type)
         kwargs = {"vad_filter": True}
         if language:
             kwargs["language"] = language
