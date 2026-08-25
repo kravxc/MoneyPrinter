@@ -14,18 +14,41 @@ from typing import List, Optional
 # Базовый набор — самые популярные, реально используемые теги TikTok/Shorts
 # (высокий охват, не «банные»). Всегда добавляются для видимости.
 BASE_HASHTAGS = [
+    # охватные «алгоритмические» теги (существуют и реально крутятся в TikTok)
     "fyp",          # самый популярный тег TikTok (For You Page)
+    "fypシ",        # вариация fyp с японским символом (огромный охват)
     "foryou",       # вторая вариация fyp
     "foryoupage",
+    "fypage",
     "viral",
+    "viralvideo",
     "trending",
+    "trend",
+    "explore",
+    "mustwatch",    # «обязательно к просмотру»
+    "mustsee",
+    "recommend",
+    "reels",
     "shorts",
+    # тематические (для нарезок фильмов/сериалов/видео)
+    "movie",
+    "movietok",
+    "seriestok",
+    "series",
+    "recap",
+    "movierecap",
+    "entertainment",
+    "bingewatch",
+    "comedy",
+    "funny",
+    # русскоязычные
     "тикток",
     "тренд",
     "вирусное",
     "фильм",
     "сериал",
     "кино",
+    "обзор",
 ]
 
 # Реально популярные теги по темам (используются миллионами роликов).
@@ -197,8 +220,8 @@ def generate_hashtags(
     for t in smart:
         if t not in out:
             out.append(t)
-    # итоговый лимит, чтобы не выглядело спамом (TikTok любит 8-15 тегов)
-    return out[:18]
+    # итоговый лимит — TikTok разрешает до 30 тегов на видео
+    return out[:30]
 
 
 def build_caption(text: str, hashtags: List[str], max_chars: int = 2000) -> str:

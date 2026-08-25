@@ -22,6 +22,10 @@ def test_generate_hashtags_includes_base():
     tags = hashtags.generate_hashtags("просто текст без маркеров", llm_model=None)
     assert "shorts" in tags
     assert "тикток" in tags
+    # охватные алгоритмические теги всегда присутствуют
+    assert "fyp" in tags
+    assert "mustwatch" in tags
+    assert "viral" in tags
 
 
 def test_build_caption_formats_tags():
