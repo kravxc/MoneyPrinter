@@ -40,6 +40,7 @@ class SerialConfig:
     series_title: str = ""            # название сериала (для подписи/тегов)
     episode: int = 1                  # номер серии
     base_hashtags: list = None        # доп. теги (название сериала и т.п.)
+    global_hashtags: list = None      # глобальные теги сериала (одинаковые для всех частей/серий)
     jobs: int = 0                     # 0 = все ядра
     whisper_model: str = "base"       # модель транскрипции
     device: str = "auto"
@@ -123,7 +124,7 @@ def _make_caption_and_tags(cfg: SerialConfig, part_idx: int, total: int, duratio
     if series_slug:
         base_tags.append(series_slug)
     tags = hashtags_mod.generate_hashtags(
-        tags_text, base=base_tags
+        tags_text, base=base_tags, global_tags=cfg.global_hashtags
     )
     caption = f"{header}\n\n{snippet}\n\n" + " ".join(f"#{t}" for t in tags)
     return caption, tags
@@ -283,6 +284,7 @@ def regenerate_captions(
     series_title: str = "",
     episode: int = 1,
     base_hashtags: list = None,
+    global_hashtags: list = None,
     whisper_model: str = "base",
     device: str = "auto",
     language: Optional[str] = None,
@@ -324,6 +326,7 @@ def regenerate_captions(
         series_title=series_title or "",
         episode=episode,
         base_hashtags=base_hashtags,
+        global_hashtags=global_hashtags,
         whisper_model=whisper_model,
         device=device,
         language=language,

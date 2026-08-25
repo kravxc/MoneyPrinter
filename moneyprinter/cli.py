@@ -92,6 +92,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_regen.add_argument("--series-title", default="", help="Название сериала")
     p_regen.add_argument("--episode", type=int, default=1, help="Номер серии")
     p_regen.add_argument("--base-hashtag", action="append", default=[], help="Доп. тег (можно несколько)")
+    p_regen.add_argument("--global-hashtag", action="append", default=[], help="Глобальный тег сериала (одинаковый для ВСЕХ частей/серий)")
     p_regen.add_argument("--whisper-model", default="base", help="Модель Whisper")
     p_regen.add_argument("--device", default="auto", help="auto/cpu/cuda")
     p_regen.add_argument("--language", default=None, help="Язык транскрипции")
@@ -115,6 +116,7 @@ def _add_serial_parser(sub) -> None:
     p.add_argument("--series-title", default="", help="Название сериала (для подписи/тегов)")
     p.add_argument("--episode", type=int, default=1, help="Номер серии (default: 1)")
     p.add_argument("--base-hashtag", action="append", default=[], help="Доп. тег (можно несколько), напр. --base-hashtag урокихимии")
+    p.add_argument("--global-hashtag", action="append", default=[], help="Глобальный тег сериала (одинаковый для ВСЕХ частей/серий), напр. --global-hashtag шекер")
     p.add_argument("--horizontal", action="store_true", help="Не конвертировать в 9:16")
     p.add_argument("--crop", action="store_true", help="Вертикаль кадрированием вместо размытого фона")
     p.add_argument("--jobs", type=int, default=0, help="Сколько частей нарезать параллельно (0 = все ядра)")
@@ -257,6 +259,7 @@ def _cmd_serial(args: argparse.Namespace) -> int:
         series_title=args.series_title,
         episode=args.episode,
         base_hashtags=args.base_hashtag or None,
+        global_hashtags=args.global_hashtag or None,
         jobs=args.jobs,
         whisper_model=args.whisper_model,
         device=args.device,
@@ -299,6 +302,7 @@ def _cmd_regen(args: argparse.Namespace) -> int:
         series_title=args.series_title,
         episode=args.episode,
         base_hashtags=args.base_hashtag or None,
+        global_hashtags=args.global_hashtag or None,
         whisper_model=args.whisper_model,
         device=args.device,
         language=args.language,
