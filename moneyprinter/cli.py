@@ -112,7 +112,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_enhance.add_argument("--preset", default="slow", help="Пreset кодирования (default: slow)")
     p_enhance.add_argument("--denoise-strength", type=int, default=3, help="Сила шумоподавления hqdn3d (0=выкл, default: 3)")
     p_enhance.add_argument("--sharpen-strength", type=float, default=1.5, help="Сила резкости (0=выкл, default: 1.5)")
-    p_enhance.add_argument("--sharp-mode", dest="sharp_mode", default="cas+unsharp", help="Режим резкости: cas+unsharp (макс, default) | cas | unsharp | off")
+    p_enhance.add_argument("--sharp-mode", dest="sharp_mode", default="unsharp", help="Режим резкости: unsharp (безопасный, default) | cas | both | off")
     p_enhance.add_argument("--no-preserve-aspect", action="store_true", help="Не сохранять ориентацию исходника (принудительный target формат)")
     p_enhance.add_argument("--ai", action="store_true", help="Использовать Real-ESRGAN (GPU, требует ncnn-vulkan)")
     p_enhance.add_argument("--ai-model", default="realesrgan-x4plus", help="Модель Real-ESRGAN (default: realesrgan-x4plus)")
@@ -344,7 +344,7 @@ def _build_enhance_cfg(args: argparse.Namespace) -> enhance_mod.EnhanceConfig:
         preset=getattr(args, "preset", "slow"),
         denoise_strength=getattr(args, "denoise_strength", 3),
         sharpen_strength=getattr(args, "sharpen_strength", 1.5),
-        sharp_mode=getattr(args, "sharp_mode", "cas+unsharp"),
+        sharp_mode=getattr(args, "sharp_mode", "unsharp"),
         preserve_aspect=not getattr(args, "no_preserve_aspect", False),
         use_ai=getattr(args, "ai", False),
         ai_model=getattr(args, "ai_model", "realesrgan-x4plus"),

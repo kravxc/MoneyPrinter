@@ -39,7 +39,7 @@ class EnhanceConfig:
     preset: str = "slow"            # скорость кодирования (медленнее = лучше)
     denoise_strength: int = 3       # сила шумоподавления hqdn3d (0 = выкл)
     sharpen_strength: float = 1.5   # сила резкости unsharp (0 = выкл)
-    sharp_mode: str = "cas+unsharp" # unsharp | cas | cas+unsharp | off
+    sharp_mode: str = "unsharp"     # unsharp (безопасный, default) | cas | both | off
     preserve_aspect: bool = True    # сохранять пропорции/ориентацию исходника
     use_ai: bool = False            # включить Real-ESRGAN
     ai_model: str = "realesrgan-x4plus"  # модель Real-ESRGAN
@@ -82,11 +82,11 @@ def _resolve_scale(cfg: EnhanceConfig, src_w: int, src_h: int) -> str:
 def _build_vf(cfg: EnhanceConfig, src_w: int = 0, src_h: int = 0) -> str:
     """Собирает строку -vf для ffmpeg: шумоподавление → резкость → scale.
 
-    Резкость заметно усиливается (для последующего пересжатия соцсетями):
-      * cas (Contrast Adaptive Sharpening) — самый заметный эффект,
-        чёткость без ореолов (как в upscaler'ях NVIDIA);
-      * unsharp — классическое усиление контуров.
-    Режим cas+unsharp даёт максимально резкую картинку.
+    Безопасная резкость по умолчанию (unsharp) шарпит ТОЛЬКО яркость (luma),
+    а chroma оставляет нетронутой. Это важно: шарпинг цветовых каналов
+    (в частности cas) даёт цветные ореолы/артефакты — «красные/зелёные
+    кривые линии», особенно на пережатых в соцсетях видео.
+    cas доступен по явному запросу для тех, у кого нет артефактов.
     """
     parts: list[str] = []
 
@@ -99,12 +99,15 @@ def _build_vf(cfg: EnhanceConfig, src_w: int = 0, src_h: int = 0) -> str:
     mode = (cfg.sharp_mode or "unsharp").lower()
     if cfg.sharpen_strength > 0 and mode != "off":
         l = max(0.0, cfg.sharpen_strength)
-        if "cas" in mode:
-            # cas: 0..1, ~0.5 уже заметно; для «сильной» резкости берём до 1.0
+        use_cas = mode in ("cas", "both", "cas+unsharp")
+        use_unsharp = mode in ("unsharp", "both", "cas+unsharp")
+        if use_cas:
+            # cas шарпит и luma и chroma — может давать цветные артефакты
             cas_strength = min(1.0, 0.4 + l * 0.3)
             parts.append(f"cas={cas_strength:.2f}")
-        if "unsharp" in mode:
-            parts.append(f"unsharp=5:5:{l}:5:5:{l * 0.5}")
+        if use_unsharp:
+            # unsharp: luma=1.5, chroma=0 → резкость без цветных ореолов
+            parts.append(f"unsharp=5:5:{l}:5:5:0.0")
 
     # 3) масштабирование (сохраняя пропорции исходника)
     if src_w and src_h:
