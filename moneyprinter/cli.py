@@ -7,6 +7,7 @@ import glob
 import json
 import os
 import sys
+from pathlib import Path
 
 from .pipeline import Config, process
 from .media import probe
@@ -14,6 +15,7 @@ from . import upload as upload_mod
 from . import scheduler as scheduler_mod
 from . import hashtags as hashtags_mod
 from . import serial as serial_mod
+from . import enhance as enhance_mod
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -44,6 +46,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--schedule", action="store_true", help="Сразу поставить нарезанные клипы в очередь публикации (первый сразу, остальные по интервалу)")
     p_run.add_argument("--schedule-interval", type=float, default=7200.0, help="Интервал между отложенными публикациями, сек (default: 7200 = 2ч)")
     p_run.add_argument("--no-upload", action="store_true", help="Не запускать планировщик после нарезки (только сформировать очередь)")
+    p_run.add_argument("--enhance", action="store_true", help="Улучшить качество клипов после нарезки (апскейл + резкость)")
 
     p_probe = sub.add_parser("probe", help="Показать метаданные видео")
     p_probe.add_argument("input", help="Путь к видеофайлу")
@@ -100,6 +103,19 @@ def _build_parser() -> argparse.ArgumentParser:
     p_regen.add_argument("--llm-url", default=None, help="Ollama base url")
     p_regen.add_argument("--jobs", type=int, default=0, help="Параллельность транскрипции (0 = все ядра)")
 
+    p_enhance = sub.add_parser("enhance", help="Улучшить качество видео (апскейл, резкость, шумоподавление)")
+    p_enhance.add_argument("input", help="Видеофайл или папка с видео")
+    p_enhance.add_argument("-o", "--output", default="enhanced", help="Папка для результатов (default: enhanced/)")
+    p_enhance.add_argument("--target-width", type=int, default=1920, help="Целевая ширина (default: 1920)")
+    p_enhance.add_argument("--target-height", type=int, default=1080, help="Целевая высота (default: 1080)")
+    p_enhance.add_argument("--crf", type=int, default=18, help="Качество кодирования (меньше = лучше, default: 18)")
+    p_enhance.add_argument("--preset", default="slow", help="Пreset кодирования (default: slow)")
+    p_enhance.add_argument("--denoise-strength", type=int, default=3, help="Сила шумоподавления hqdn3d (0=выкл, default: 3)")
+    p_enhance.add_argument("--sharpen-strength", type=float, default=1.0, help="Сила резкости unsharp (0=выкл, default: 1.0)")
+    p_enhance.add_argument("--ai", action="store_true", help="Использовать Real-ESRGAN (GPU, требует ncnn-vulkan)")
+    p_enhance.add_argument("--ai-model", default="realesrgan-x4plus", help="Модель Real-ESRGAN (default: realesrgan-x4plus)")
+    p_enhance.add_argument("--jobs", type=int, default=0, help="Параллельность (0 = все ядра)")
+
     return parser
 
 
@@ -129,6 +145,7 @@ def _add_serial_parser(sub) -> None:
     p.add_argument("--schedule", action="store_true", help="Сразу поставить части в очередь публикации (первая сразу, остальные по интервалу)")
     p.add_argument("--schedule-interval", type=float, default=7200.0, help="Интервал между публикациями, сек (default: 7200 = 2ч)")
     p.add_argument("--no-upload", action="store_true", help="Не запускать планировщик после нарезки")
+    p.add_argument("--enhance", action="store_true", help="Улучшить качество клипов после нарезки (апскейл + резкость)")
 
 
 def _cmd_probe(args: argparse.Namespace) -> int:
@@ -268,6 +285,8 @@ def _cmd_serial(args: argparse.Namespace) -> int:
         llm_url=args.llm_url,
         auto_install=True,
         transcribe_audio=not args.no_audio_desc,
+        enhance=args.enhance,
+        enhance_cfg=_build_enhance_cfg(args) if getattr(args, "enhance", False) else None,
     )
     result = serial_mod.process_serial(cfg)
     print(f"\nГотово: {len(result.clips)} микро-серий → {args.output}")
@@ -315,6 +334,37 @@ def _cmd_regen(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_enhance_cfg(args: argparse.Namespace) -> enhance_mod.EnhanceConfig:
+    return enhance_mod.EnhanceConfig(
+        target_width=getattr(args, "target_width", 1920),
+        target_height=getattr(args, "target_height", 1080),
+        crf=getattr(args, "crf", 18),
+        preset=getattr(args, "preset", "slow"),
+        denoise_strength=getattr(args, "denoise_strength", 3),
+        sharpen_strength=getattr(args, "sharpen_strength", 1.0),
+        use_ai=getattr(args, "ai", False),
+        ai_model=getattr(args, "ai_model", "realesrgan-x4plus"),
+        jobs=getattr(args, "jobs", 0),
+    )
+
+
+def _cmd_enhance(args: argparse.Namespace) -> int:
+    cfg = _build_enhance_cfg(args)
+    input_path = args.input
+    output_dir = args.output
+
+    if os.path.isdir(input_path):
+        enhance_mod.enhance_directory(input_path, output_dir, cfg)
+    else:
+        out_path = os.path.join(output_dir, Path(input_path).stem + "_enhanced.mp4")
+        os.makedirs(output_dir, exist_ok=True)
+        info = probe(input_path)
+        print(f"[i] Улучшение: {input_path} ({info.width}x{info.height}, {info.duration:.1f}с)")
+        enhance_mod.enhance_video(input_path, out_path, cfg, total_duration=info.duration)
+        print(f"[✓] Готово: {out_path}")
+    return 0
+
+
 def _quiet_warnings() -> None:
     """Глушим сторонние warning-логи (HF, urllib3 и т.п.) в консоли."""
     import logging as _l
@@ -354,6 +404,8 @@ def main(argv=None) -> int:
             return _cmd_serial(args)
         if args.command == "regen-captions":
             return _cmd_regen(args)
+        if args.command == "enhance":
+            return _cmd_enhance(args)
 
         cfg = Config(
             input_path=args.input,
@@ -373,6 +425,8 @@ def main(argv=None) -> int:
             llm_url=args.llm_url,
             jobs=args.jobs,
             auto_install=not args.no_auto_install,
+            enhance=args.enhance,
+            enhance_cfg=_build_enhance_cfg(args) if getattr(args, "enhance", False) else None,
         )
         result = process(cfg)
         print(f"\nГотово: {len(result.clips)} клипов → {args.output}")

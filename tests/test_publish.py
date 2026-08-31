@@ -28,6 +28,25 @@ def test_generate_hashtags_includes_base():
     assert "viral" in tags
 
 
+def test_base_hashtags_append_not_replace():
+    # --base-hashtag не должен убирать дефолтные охватные теги (fyp/viral/shorts)
+    tags = hashtags.generate_hashtags("текст", base=["шекер"], llm_model=None)
+    assert "шекер" in tags
+    assert "shorts" in tags
+    assert "fyp" in tags
+
+
+def test_global_hashtags_replace_defaults():
+    # --global-hashtag заменяет дефолтный набор сериальных тегов
+    tags = hashtags.generate_hashtags(
+        "текст", global_tags=["шекер", "сериал"], llm_model=None
+    )
+    assert "шекер" in tags
+    assert "сериал" in tags
+    # дефолтные глобальные не лезут при явно заданных
+    assert "сторителлинг" not in tags
+
+
 def test_build_caption_formats_tags():
     cap = hashtags.build_caption("привет мир", ["шутка", "смех"])
     assert "#шутка" in cap and "#смех" in cap
