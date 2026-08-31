@@ -110,8 +110,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p_enhance.add_argument("--target-height", type=int, default=1080, help="Целевая высота (default: 1080)")
     p_enhance.add_argument("--crf", type=int, default=18, help="Качество кодирования (меньше = лучше, default: 18)")
     p_enhance.add_argument("--preset", default="slow", help="Пreset кодирования (default: slow)")
-    p_enhance.add_argument("--denoise-strength", type=int, default=3, help="Сила шумоподавления hqdn3d (0=выкл, default: 3)")
-    p_enhance.add_argument("--sharpen-strength", type=float, default=1.5, help="Сила резкости (0=выкл, default: 1.5)")
+    p_enhance.add_argument("--denoise-strength", type=int, default=5, help="Сила шумоподавления hqdn3d (0=выкл, default: 5)")
+    p_enhance.add_argument("--no-deblock", action="store_true", help="Не убирать блочность сжатия (если источник чистый)")
+    p_enhance.add_argument("--sharpen-strength", type=float, default=0.8, help="Сила резкости по яркости (0=выкл, default: 0.8)")
     p_enhance.add_argument("--sharp-mode", dest="sharp_mode", default="unsharp", help="Режим резкости: unsharp (безопасный, default) | cas | both | off")
     p_enhance.add_argument("--no-preserve-aspect", action="store_true", help="Не сохранять ориентацию исходника (принудительный target формат)")
     p_enhance.add_argument("--ai", action="store_true", help="Использовать Real-ESRGAN (GPU, требует ncnn-vulkan)")
@@ -342,8 +343,9 @@ def _build_enhance_cfg(args: argparse.Namespace) -> enhance_mod.EnhanceConfig:
         target_height=getattr(args, "target_height", 1080),
         crf=getattr(args, "crf", 18),
         preset=getattr(args, "preset", "slow"),
-        denoise_strength=getattr(args, "denoise_strength", 3),
-        sharpen_strength=getattr(args, "sharpen_strength", 1.5),
+        denoise_strength=getattr(args, "denoise_strength", 5),
+        deblock=not getattr(args, "no_deblock", False),
+        sharpen_strength=getattr(args, "sharpen_strength", 0.8),
         sharp_mode=getattr(args, "sharp_mode", "unsharp"),
         preserve_aspect=not getattr(args, "no_preserve_aspect", False),
         use_ai=getattr(args, "ai", False),

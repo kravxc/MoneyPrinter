@@ -11,20 +11,21 @@ def test_vf_builds_chain():
         denoise_strength=3, sharpen_strength=1.0,
     )
     vf = enhance._build_vf(cfg)
+    assert "deblock" in vf  # убирает блочность пережатых источников
     assert "hqdn3d" in vf
     assert "unsharp" in vf
     assert "cas" not in vf  # cas по умолчанию выключен (даёт цветные артефакты)
     assert "scale=1920:1080" in vf
-    # шумоподавление идёт ДО резкости
-    assert vf.index("hqdn3d") < vf.index("unsharp")
+    # порядок: deblock → hqdn3d → unsharp (шумоподавление ДО резкости)
+    assert vf.index("deblock") < vf.index("hqdn3d") < vf.index("unsharp")
 
 
 def test_vf_luma_only_sharpening():
     # резкость по умолчанию шарпит только яркость, а не chroma (цвета)
-    cfg = enhance.EnhanceConfig(sharpen_strength=1.5, sharp_mode="unsharp")
+    cfg = enhance.EnhanceConfig(sharpen_strength=0.8, sharp_mode="unsharp")
     vf = enhance._build_vf(cfg)
-    # unsharp: luma=1.5, chroma=0.0 → без цветных ореолов
-    assert "unsharp=5:5:1.5:5:5:0.0" in vf
+    # unsharp: luma=0.8, chroma=0.0 → без цветных ореолов
+    assert "unsharp=5:5:0.8:5:5:0.0" in vf
 
 
 def test_vf_preserves_vertical_orientation():
