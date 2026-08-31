@@ -38,7 +38,9 @@ class EnhanceConfig:
     crf: int = 18                   # качество (меньше = лучше)
     preset: str = "slow"            # скорость кодирования (медленнее = лучше)
     denoise_strength: int = 3       # сила шумоподавления hqdn3d (0 = выкл)
-    sharpen_strength: float = 1.0   # сила резкости unsharp (0 = выкл)
+    sharpen_strength: float = 1.5   # сила резкости unsharp (0 = выкл)
+    sharp_mode: str = "cas+unsharp" # unsharp | cas | cas+unsharp | off
+    preserve_aspect: bool = True    # сохранять пропорции/ориентацию исходника
     use_ai: bool = False            # включить Real-ESRGAN
     ai_model: str = "realesrgan-x4plus"  # модель Real-ESRGAN
     ai_scale: int = 2               # коэффициент масштабирования AI (2 или 4)
@@ -49,8 +51,43 @@ class EnhanceConfig:
 # ffmpeg фильтры
 # ---------------------------------------------------------------------------
 
-def _build_vf(cfg: EnhanceConfig) -> str:
-    """Собирает строку -vf для ffmpeg: шумоподавление → резкость → scale."""
+def _resolve_scale(cfg: EnhanceConfig, src_w: int, src_h: int) -> str:
+    """Возвращает scale-фильтр с учётом ориентации исходника.
+
+    Если preserve_aspect=True (по умолчанию) и пользователь не менял формат,
+    target подстраивается под ориентацию видео:
+      * горизонтальное (шир > выс) → target сохраняется (обычно 1920x1080)
+      * вертикальное (выс > шир)   → target меняется местами (напр. 1080x1920)
+    Содержимое не искажается — используется force_original_aspect_ratio=decrease
+    и pad до целевого размера (чёрные/размытые поля при несовпадении пропорций).
+    """
+    tw, th = cfg.target_width, cfg.target_height
+    if cfg.preserve_aspect and tw and th:
+        src_vertical = src_h > src_w
+        tgt_vertical = th > tw
+        # если ориентация исходника и цели не совпадают — меняем местами
+        if src_vertical != tgt_vertical:
+            tw, th = th, tw
+    if not tw or not th:
+        # целевой размер не задан — просто upscale в 2 раза (сохраняя пропорции)
+        sf = 2
+        target_scale = f"scale={src_w * sf}:{src_h * sf}:flags=lanczos"
+        return target_scale
+    return (
+        f"scale={tw}:{th}:flags=lanczos:force_original_aspect_ratio=decrease"
+        f":force_divisible_by=2,pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2:color=black"
+    )
+
+
+def _build_vf(cfg: EnhanceConfig, src_w: int = 0, src_h: int = 0) -> str:
+    """Собирает строку -vf для ffmpeg: шумоподавление → резкость → scale.
+
+    Резкость заметно усиливается (для последующего пересжатия соцсетями):
+      * cas (Contrast Adaptive Sharpening) — самый заметный эффект,
+        чёткость без ореолов (как в upscaler'ях NVIDIA);
+      * unsharp — классическое усиление контуров.
+    Режим cas+unsharp даёт максимально резкую картинку.
+    """
     parts: list[str] = []
 
     # 1) шумоподавление (ДО резкости, иначе резкость усиливает шумы)
@@ -59,12 +96,22 @@ def _build_vf(cfg: EnhanceConfig) -> str:
         parts.append(f"hqdn3d={s}:{s}:{s-1}:{s}")
 
     # 2) резкость
-    if cfg.sharpen_strength > 0:
-        l = cfg.sharpen_strength
-        parts.append(f"unsharp=5:5:{l}:5:5:{l * 0.5}")
+    mode = (cfg.sharp_mode or "unsharp").lower()
+    if cfg.sharpen_strength > 0 and mode != "off":
+        l = max(0.0, cfg.sharpen_strength)
+        if "cas" in mode:
+            # cas: 0..1, ~0.5 уже заметно; для «сильной» резкости берём до 1.0
+            cas_strength = min(1.0, 0.4 + l * 0.3)
+            parts.append(f"cas={cas_strength:.2f}")
+        if "unsharp" in mode:
+            parts.append(f"unsharp=5:5:{l}:5:5:{l * 0.5}")
 
-    # 3) масштабирование (lanczos — высокое качество)
-    parts.append(f"scale={cfg.target_width}:{cfg.target_height}:flags=lanczos")
+    # 3) масштабирование (сохраняя пропорции исходника)
+    if src_w and src_h:
+        parts.append(_resolve_scale(cfg, src_w, src_h))
+    else:
+        tw, th = cfg.target_width, cfg.target_height
+        parts.append(f"scale={tw}:{th}:flags=lanczos")
 
     return ",".join(parts)
 
@@ -94,6 +141,8 @@ def _enhance_with_ai(
     input_path: str,
     output_path: str,
     cfg: EnhanceConfig,
+    src_w: int,
+    src_h: int,
     total_duration: float = 0.0,
     bar=None,
 ) -> str:
@@ -137,7 +186,7 @@ def _enhance_with_ai(
             raise FFmpegError("realesrgan-ncnn-vulkan не найден. Установите или отключите --ai.")
 
         # Шаг 2: ffmpeg — ресайз до целевого размера + фильтры + кодек
-        vf = _build_vf(cfg)
+        vf = _build_vf(cfg, src_w, src_h)
         cmd_ffmpeg = [
             "ffmpeg", "-v", "error", "-y",
             "-i", tmp_upscaled,
@@ -168,11 +217,18 @@ def enhance_video(
     """
     require_ffmpeg()
 
+    # определяем исходное разрешение, чтобы сохранить ориентацию/пропорции
+    try:
+        info = probe(input_path)
+        src_w, src_h = int(info.width), int(info.height)
+    except Exception:
+        src_w, src_h = 0, 0
+
     if cfg.use_ai:
-        return _enhance_with_ai(input_path, output_path, cfg, total_duration, bar)
+        return _enhance_with_ai(input_path, output_path, cfg, src_w, src_h, total_duration, bar)
 
     # ffmpeg-only режим
-    vf = _build_vf(cfg)
+    vf = _build_vf(cfg, src_w, src_h)
     cmd = [
         "ffmpeg", "-v", "error", "-y", "-hwaccel", "auto",
         "-i", str(input_path),
