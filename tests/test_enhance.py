@@ -13,10 +13,18 @@ def test_vf_builds_chain():
     vf = enhance._build_vf(cfg)
     assert "hqdn3d" in vf
     assert "unsharp" in vf
-    assert "cas" in vf  # дефолтный режим cas+unsharp
+    assert "cas" not in vf  # cas по умолчанию выключен (даёт цветные артефакты)
     assert "scale=1920:1080" in vf
     # шумоподавление идёт ДО резкости
     assert vf.index("hqdn3d") < vf.index("unsharp")
+
+
+def test_vf_luma_only_sharpening():
+    # резкость по умолчанию шарпит только яркость, а не chroma (цвета)
+    cfg = enhance.EnhanceConfig(sharpen_strength=1.5, sharp_mode="unsharp")
+    vf = enhance._build_vf(cfg)
+    # unsharp: luma=1.5, chroma=0.0 → без цветных ореолов
+    assert "unsharp=5:5:1.5:5:5:0.0" in vf
 
 
 def test_vf_preserves_vertical_orientation():
@@ -36,16 +44,16 @@ def test_vf_preserves_horizontal_orientation():
 
 
 def test_vf_sharp_modes():
-    # cas-only
+    # cas-only (по явному запросу)
     vf_cas = enhance._build_vf(
         enhance.EnhanceConfig(sharp_mode="cas", sharpen_strength=1.0)
     )
     assert "cas" in vf_cas and "unsharp" not in vf_cas
-    # unsharp-only
-    vf_un = enhance._build_vf(
-        enhance.EnhanceConfig(sharp_mode="unsharp", sharpen_strength=1.0)
+    # both (cas + unsharp)
+    vf_both = enhance._build_vf(
+        enhance.EnhanceConfig(sharp_mode="both", sharpen_strength=1.0)
     )
-    assert "unsharp" in vf_un and "cas" not in vf_un
+    assert "cas" in vf_both and "unsharp" in vf_both
     # off
     vf_off = enhance._build_vf(
         enhance.EnhanceConfig(sharp_mode="off", sharpen_strength=1.0)
