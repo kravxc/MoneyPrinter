@@ -37,8 +37,9 @@ class EnhanceConfig:
     target_height: int = 1080
     crf: int = 18                   # качество (меньше = лучше)
     preset: str = "slow"            # скорость кодирования (медленнее = лучше)
-    denoise_strength: int = 3       # сила шумоподавления hqdn3d (0 = выкл)
-    sharpen_strength: float = 1.5   # сила резкости unsharp (0 = выкл)
+    denoise_strength: int = 5       # сила шумоподавления hqdn3d (0 = выкл)
+    deblock: bool = True            # убирать блочность сжатия (пережатые источники)
+    sharpen_strength: float = 0.8   # сила резкости unsharp (0 = выкл)
     sharp_mode: str = "unsharp"     # unsharp (безопасный, default) | cas | both | off
     preserve_aspect: bool = True    # сохранять пропорции/ориентацию исходника
     use_ai: bool = False            # включить Real-ESRGAN
@@ -87,13 +88,21 @@ def _build_vf(cfg: EnhanceConfig, src_w: int = 0, src_h: int = 0) -> str:
     (в частности cas) даёт цветные ореолы/артефакты — «красные/зелёные
     кривые линии», особенно на пережатых в соцсетях видео.
     cas доступен по явному запросу для тех, у кого нет артефактов.
+
+    На пережатых источниках (Telegram/соцсети) первым идёт deblock (убирает
+    блочность сжатия) и усиленный шумодав hqdn3d — иначе резкость только
+    подчёркивает микро-блоки («пиксели»). Резкость поэтому умеренная.
     """
     parts: list[str] = []
+
+    # 0) remove compression blocks (пережатые источники)
+    if cfg.deblock:
+        parts.append("deblock=filter=1:block=8")
 
     # 1) шумоподавление (ДО резкости, иначе резкость усиливает шумы)
     if cfg.denoise_strength > 0:
         s = cfg.denoise_strength
-        parts.append(f"hqdn3d={s}:{s}:{s-1}:{s}")
+        parts.append(f"hqdn3d={s}:{s}:{max(1,s-1)}:{s}")
 
     # 2) резкость
     mode = (cfg.sharp_mode or "unsharp").lower()
