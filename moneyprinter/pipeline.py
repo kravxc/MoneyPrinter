@@ -44,6 +44,8 @@ class Config:
     auto_install: bool = True  # сам доустанавливать недостающие AI-зависимости
     keep_audio: bool = False  # не используется сейчас, задел на будущее
     temp_dir: Optional[str] = None
+    enhance: bool = False  # улучшать ли качество клипов после нарезки
+    enhance_cfg: "EnhanceConfig" = None  # параметры улучшения (None = дефолт)
 
 
 def _energy_only_candidates(
@@ -172,6 +174,13 @@ def process(cfg: Config) -> PipelineResult:
                 )
             else:
                 cutting.cut_clip(input_path, cand, out_path, bar=bar, offset=prefix)
+            if cfg.enhance:
+                from .enhance import EnhanceConfig, enhance_video
+                enhance_cfg = cfg.enhance_cfg or EnhanceConfig(jobs=cfg.jobs)
+                tmp_out = out_dir / (Path(out_name).stem + "_tmp.mp4")
+                enhance_video(out_path, str(tmp_out), enhance_cfg,
+                              total_duration=cand.duration, bar=bar)
+                os.replace(str(tmp_out), out_path)
             return cand, out_name, out_path
 
         bar = tqdm(total=sum(c.duration for c in picked), desc="Нарезка", unit="s")

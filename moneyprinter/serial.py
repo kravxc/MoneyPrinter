@@ -49,6 +49,8 @@ class SerialConfig:
     llm_url: Optional[str] = None
     auto_install: bool = True
     transcribe_audio: bool = True     # если False — описания без крючка по содержанию
+    enhance: bool = False             # улучшать ли качество клипов после нарезки
+    enhance_cfg: "EnhanceConfig" = None  # параметры улучшения (обычно None = дефолт)
 
 
 
@@ -238,6 +240,17 @@ def process_serial(cfg: SerialConfig) -> PipelineResult:
             cutting.make_vertical(input_path, cand, out_path, blur_bg=cfg.blur_bg, bar=bar, offset=prefix)
         else:
             cutting.cut_clip(input_path, cand, out_path, bar=bar, offset=prefix)
+        if cfg.enhance:
+            from .enhance import enhance_video
+            enhance_cfg = cfg.enhance_cfg
+            if enhance_cfg is None:
+                from .enhance import EnhanceConfig
+                enhance_cfg = EnhanceConfig(jobs=cfg.jobs)
+            # улучшаем во временный файл и заменяем исходный клип
+            tmp_out = out_dir / (Path(out_path).stem + "_tmp.mp4")
+            enhance_video(out_path, str(tmp_out), enhance_cfg,
+                          total_duration=end - start, bar=bar)
+            os.replace(str(tmp_out), out_path)
         return ClipResult(
             path=out_path, start=start, end=end, duration=end - start,
             score=0.0, text=text, reason="serial", vertical=cfg.vertical,
