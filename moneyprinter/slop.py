@@ -315,7 +315,17 @@ def generate_slop(cfg: SlopConfig) -> str:
         # генерируем кадр/фон для каждой сцены и титр
         scene_clips: List[str] = []
         fonts = _find_font()
-        fontfile = fonts[0] if fonts else None
+        fontfile = None
+        if fonts:
+            # копируем шрифт в локальный файл с простым именем — чтобы в
+            # drawtext не передавать абсолютный путь с двоеточиями/слэшами
+            # (это ломает парсер фильтра на Windows). fontfile=font.ttf
+            # относительно cwd работает везде.
+            try:
+                shutil.copy(fonts[0], tmp_path / "font.ttf")
+                fontfile = "font.ttf"
+            except OSError:
+                fontfile = None
         for i, (sc, wav) in enumerate(zip(scenes, wav_files), 1):
             dur = _probe_duration(str(wav)) * 1.15
             if dur < 1.0:
