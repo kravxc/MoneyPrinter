@@ -41,3 +41,22 @@ def test_detect_tts_returns_something_or_error():
     # на любой ОС должен быть хоть один движок или явный RuntimeError позже
     engine = slop._detect_tts()
     assert isinstance(engine, str)
+
+
+def test_ffpath_escapes_windows_path():
+    # путь C:\Windows\Fonts\arialbd.ttf не должен ломать фильтр drawtext
+    p = slop._ffpath("C:\\Windows\\Fonts\\arialbd.ttf")
+    assert p == "C\\:/Windows/Fonts/arialbd.ttf"
+    # обратных слэшей НЕ осталось (только \: — экранирование двоеточия пути)
+    assert p.count("\\") == p.count("\\:")
+
+
+def test_write_utf8_no_bom():
+    from pathlib import Path
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        f = Path(tmp) / "cap.txt"
+        slop.write_utf8(f, "я огурчик, ты огурчик.")
+        raw = f.read_bytes()
+        assert not raw.startswith(b"\xef\xbb\xbf")  # нет BOM
+        assert raw.decode("utf-8") == "я огурчик, ты огурчик."

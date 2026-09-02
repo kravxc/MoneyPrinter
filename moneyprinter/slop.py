@@ -228,19 +228,39 @@ def _background_cmd(cfg: SlopConfig, seconds: float, seed: int) -> list:
 
 
 def _title_cmd(scene: str, seconds: float, fps: int, fontfile: str, seed: int) -> list:
-    """Генерирует сцену с крупным цветным титром поверх фона."""
+    """Генерирует сцену с крупным цветным титром поверх фона.
+
+    Текст передаётся через textfile (файл) — так не нужно экранировать
+    кавычки/двоеточия в drawtext, что критично на Windows. Пути пишем со
+    слешами `/` (ffmpeg принимает их и на Windows).
+    """
     colors = ["#FF2D55", "#00C2FF", "#FFEB3B", "#7CFF00", "#FF5C00"]
     color = colors[seed % len(colors)]
-    safe_text = scene.replace(":", r"\:").replace("'", "")
+    # textfile: utf-8 без BOM (drawtext требует)
+    textfile = f"caption_{seed}.txt"
     vf = (
-        f"drawtext=fontfile={fontfile}:text='{safe_text}':"
+        f"drawtext=fontfile={_ffpath(fontfile)}:"
+        f"textfile={textfile}:"
         f"fontcolor={color}:fontsize=110:line_spacing=30:"
         f"x=(w-text_w)/2:y=(h-text_h)/2:"
         f"shadowcolor=black:shadowx=6:shadowy=6:"
         f"box=1:boxcolor=black@0.55:boxborderw=40"
     )
     # берём уже сгенерированный фон, накладываем титр
-    return ["ffmpeg", "-v", "error", "-y", "-i", f"bg_{seed}.mp4", "-vf", vf, "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-pix_fmt", "yuv420p", f"title_{seed}.mp4"]
+    return ["ffmpeg", "-v", "error", "-y", "-i", f"bg_{seed}.mp4", "-vf", vf, "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-pix_fmt", "yuv420p", f"title_{seed}.mp4"], textfile, scene
+
+
+def _ffpath(path: str) -> str:
+    """Нормализует путь для ffmpeg-фильтра: всегда слэши, экранирование ' и %."""
+    p = path.replace("\\", "/")
+    p = p.replace(":", "\\:").replace("'", "\\'").replace("%", "%%")
+    return p
+
+
+def write_utf8(path: Path, text: str) -> None:
+    """Пишет UTF-8 БЕЗ BOM (янв. для текстовых файлов drawtext)."""
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
 
 
 # ---------------------------------------------------------------------------
@@ -302,7 +322,10 @@ def generate_slop(cfg: SlopConfig) -> str:
                 dur = 1.0
             subprocess.run(_background_cmd(cfg, dur, seed + i), cwd=str(tmp_path), check=True)
             if fontfile:
-                subprocess.run(_title_cmd(sc, dur, cfg.fps, fontfile, seed + i), cwd=str(tmp_path), check=True)
+                cmd, textfile, _scene = _title_cmd(sc, dur, cfg.fps, fontfile, seed + i)
+                # пишем текст титра в файл (utf-8 без BOM — требование drawtext)
+                write_utf8(tmp_path / textfile, _scene)
+                subprocess.run(cmd, cwd=str(tmp_path), check=True)
                 scene_clips.append(f"title_{seed + i}.mp4")
             else:
                 scene_clips.append(f"bg_{seed + i}.mp4")
