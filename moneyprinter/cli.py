@@ -16,7 +16,6 @@ from . import scheduler as scheduler_mod
 from . import hashtags as hashtags_mod
 from . import serial as serial_mod
 from . import enhance as enhance_mod
-from . import slop as slop_mod
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -119,15 +118,6 @@ def _build_parser() -> argparse.ArgumentParser:
     p_enhance.add_argument("--ai", action="store_true", help="Использовать Real-ESRGAN (GPU, требует ncnn-vulkan)")
     p_enhance.add_argument("--ai-model", default="realesrgan-x4plus", help="Модель Real-ESRGAN (default: realesrgan-x4plus)")
     p_enhance.add_argument("--jobs", type=int, default=0, help="Параллельность (0 = все ядра)")
-
-    p_slop = sub.add_parser("slop", help="Сгенерировать «нейрослоп»-клип (абсурдная история + озвучка + AI-лук фоны)")
-    p_slop.add_argument("--story", default="", help="Текст истории (промпт). Если пусто — сгенерируется случайная абсурдная история")
-    p_slop.add_argument("--story-file", default="", help="Файл с текстом истории (вместо --story)")
-    p_slop.add_argument("-o", "--output", default="slop", help="Папка для результата (default: slop/)")
-    p_slop.add_argument("--background", default="gradient", choices=["gradient", "glitch"], help="Стиль AI-фона (default: gradient)")
-    p_slop.add_argument("--voice", default="", help="Голос TTS (default: авто — Milena на macOS, иначе ru/espeak)")
-    p_slop.add_argument("--rate", type=int, default=160, help="Скорость речи для espeak (135-200, default: 160)")
-    p_slop.add_argument("--seed", type=int, default=0, help="Сид генерации (0 = случайный)")
 
     return parser
 
@@ -381,21 +371,6 @@ def _cmd_enhance(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_slop(args: argparse.Namespace) -> int:
-    cfg = slop_mod.SlopConfig(
-        story=args.story,
-        story_file=args.story_file,
-        output=args.output,
-        background=args.background,
-        voice=args.voice,
-        rate=args.rate,
-        seed=args.seed,
-    )
-    out = slop_mod.generate_slop(cfg)
-    print(f"\nКлип: {out}")
-    return 0
-
-
 def _quiet_warnings() -> None:
     """Глушим сторонние warning-логи (HF, urllib3 и т.п.) в консоли."""
     import logging as _l
@@ -437,8 +412,6 @@ def main(argv=None) -> int:
             return _cmd_regen(args)
         if args.command == "enhance":
             return _cmd_enhance(args)
-        if args.command == "slop":
-            return _cmd_slop(args)
 
         cfg = Config(
             input_path=args.input,
