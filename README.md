@@ -267,36 +267,46 @@ moneyprinter process видео.mp4 --enhance
 Ход обработки показывается прогресс-барами в консоли:
 `Сцены` — декодирование видеоряда, `Нарезка` — единый бар через все клипы.
 
-## Генерация «нейрослоп»-клипов (`slop`)
+## Установка на Windows
 
-Генератор коротких вирусных AI-видео в духе «я — клубника, ты — клубника,
-почему у нас родился банан». Всё генерируется локально, без GPU и моделей:
-озвучка через встроенный TTS (macOS `say`, Windows SAPI, или `piper`/`espeak`),
-а кадры — процедурные «AI-лук» фоны (градиенты/глитч) с крупными титрами.
+Для запуска программы на Windows понадобится:
 
-```bash
-# Случайная абсурдная история
-moneyprinter slop
+1. **Python 3.10+** — с сайта https://www.python.org/downloads/ (при установке
+   отметьте галочку **«Add python.exe to PATH»**).
+2. **ffmpeg** — программа для обработки видео. Скачайте нужный build со страницы
+   https://www.gyan.dev/ffmpeg/builds/ (раздел **release** → архив
+   `ffmpeg-release-essentials.zip`). Распакуйте архив в удобное место, затем
+   добавьте папку `ffmpeg-release-essentials\bin` в переменную окружения PATH.
+3. **Git** (опционально, для клонирования/обновления) — https://git-scm.com/download/win
 
-# Своя история (промпт)
-moneyprinter slop --story "Я клубника, ты клубника. Почему у нас родился банан? Банан молчит и улыбается."
+Установка зависимостей и запуск в PowerShell:
 
-# Из файла
-moneyprinter slop --story-file idea.txt -o out/
+```powershell
+cd "C:\Users\kiril\OneDrive\Рабочий стол\MoneyPrinter"
+git pull
 
-# Стили фона и повторяемость
-moneyprinter slop --background glitch    # градиенты (gradient) или глитч-шум
-moneyprinter slop --seed 42              # одинаковый сид = одинаковый клип
+# виртуальное окружение (однократно)
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+
+# зависимости
+pip install -e .                    # базовые (нужны для нарезки/enhance)
+pip install -e .[transcribe]        # транскрипция и описания (whisper)
+pip install -e .[scenes]            # детектор сцен (рекомендуется)
+pip install -e .[upload]            # автопостинг в TikTok (Playwright)
 ```
 
-Итог — вертикальный клип 1080x1920 (H.264 + AAC) для Shorts/TikTok.
-Oзвучка каждой фразы идёт своим куском, поэтому текст легко «рвётся» под
-субтитры/сцены. Голос: macOS — Milena (русский), Windows — системный SAPI,
-можно переопределить `--voice`.
+Проверка установки (должны показать пути без ошибок):
 
-Работает на Windows: шрифт для титров копируется во временную папку как
-`font.ttf` и передаётся в drawtext относительным именем (без двоеточий пути),
-а текст — через `textfile`. Так `drawtext` не падает на `C:\Windows\...`.
+```powershell
+ffmpeg -version
+python -c "import moneyprinter"
+```
+
+Если ffmpeg написал `'ffmpeg' is not recognized...` — PATH не подхватился:
+перезапустите PowerShell либо проверьте, что папка `bin` из архива ffmpeg
+добавлена в PATH (Система → Дополнительные параметры системы →
+Переменные среды → Path).
 
 ## Структура
 
