@@ -32,7 +32,7 @@ def _detect_ffmpeg(path: str, duration: float, threshold: float = 0.35) -> List[
         m = _SHOWINFO_RE.search(line)
         if m and "n:" in line:
             t = float(m.group(1))
-            if t > 1.0:  # игнорируем первый кадр
+            if t > 1.0:
                 breaks.append(SceneBreak(time=t))
     return breaks
 

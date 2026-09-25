@@ -193,7 +193,7 @@ def _cmd_publish(args: argparse.Namespace) -> int:
         if args.caption:
             captions.append(args.caption)
         else:
-            # фолбэк: базовые теги по имени файла
+
             tags = hashtags_mod.generate_hashtags(os.path.splitext(os.path.basename(v))[0])
             captions.append(hashtags_mod.build_caption("", tags))
     if args.queue:
@@ -406,7 +406,7 @@ def main(argv=None) -> int:
     _quiet_warnings()
     args = _build_parser().parse_args(argv)
     try:
-        # Команды, работающие с TikTok, сами обеспечат наличие Playwright
+
         if args.command in ("login", "publish", "run-schedule", "publish-next"):
             upload_mod.ensure_playwright(auto_install=True)
 

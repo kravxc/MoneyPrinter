@@ -66,7 +66,7 @@ def test_group_segments_respects_scene_break():
 
 
 def test_generate_candidates_splits_long_story():
-    # история длиннее max_duration делится на последовательные части без потерь
+
     segs = [_seg(0, 40, "длинная история"), _seg(40.5, 80, "продолжение")]
     e = np.ones(100)
     t = np.linspace(0, 100, 100)

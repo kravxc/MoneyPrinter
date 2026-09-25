@@ -55,9 +55,9 @@ def silence_hf():
     with _SilenceHF():
         yield
 
-# --- Глушим «шум» в консоли (предупреждения HF, логи faster-whisper) ---
+
 import logging as _logging
-# отключаем warning-сообщения HuggingFace (HF_TOKEN, symlinks и т.п.)
+
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -72,9 +72,9 @@ try:
 except Exception:
     pass
 
-# --- Глушим «шум» в консоли (предупреждения HF, логи faster-whisper) ---
+
 import logging as _logging
-# отключаем warning-сообщения HuggingFace (HF_TOKEN, symlinks и т.п.)
+
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -83,7 +83,7 @@ try:
     _warnings.filterwarnings("ignore", message=".*unauthenticated requests to the HF Hub.*")
     _warnings.filterwarnings("ignore", message=".*symlinks by default.*")
     _warnings.filterwarnings("ignore", message=".*cache-system uses symlinks.*")
-    # скрываем warning-логгер huggingface_hub
+
     _logging.getLogger("huggingface_hub").setLevel(_logging.ERROR)
     _logging.getLogger("urllib3").setLevel(_logging.ERROR)
 except Exception:
@@ -94,10 +94,10 @@ _MISSING_HINT = (
     "или pip install faster-whisper"
 )
 
-# Параметры чанкования (сек)
+
 CHUNK_SEC = 300.0
 CHUNK_OVERLAP = 15.0
-CHUNK_MIN_DURATION = 300.0  # меньше — одиночный проход
+CHUNK_MIN_DURATION = 300.0
 
 
 class TranscriptionError(RuntimeError):
@@ -127,7 +127,7 @@ def _ensure_faster_whisper(auto_install: bool) -> bool:
         return False
 
 
-# --- CUDA-поддержка ---------------------------------------------------------
+
 
 def _has_nvidia_gpu() -> bool:
     """Определяет наличие NVIDIA GPU без тяжёлых зависимостей."""
@@ -175,7 +175,7 @@ def _cuda_libs_missing() -> bool:
         return True
 
 
-# --- Чанки аудио ------------------------------------------------------------
+
 
 def _make_chunks(
     wav_path: str,
@@ -218,7 +218,7 @@ def _make_chunks(
     return chunks
 
 
-# --- Параллельные воркеры (модульный уровень для spawn/picklable) -----------
+
 
 _worker_model = None
 _worker_language = None
@@ -296,7 +296,7 @@ def _transcribe_chunked_parallel(
         return _merge_chunk_results(results, chunks)
 
 
-# --- Одиночный проход -------------------------------------------------------
+
 
 def _transcribe_faster_whisper(
     audio_path: str,
@@ -370,7 +370,7 @@ def _transcribe_faster_whisper(
         raise
 
 
-# --- openai-whisper фолбэк --------------------------------------------------
+
 
 def _transcribe_openai_whisper(
     audio_path: str,

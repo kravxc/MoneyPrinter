@@ -22,14 +22,14 @@ def test_generate_hashtags_includes_base():
     tags = hashtags.generate_hashtags("просто текст без маркеров", llm_model=None)
     assert "shorts" in tags
     assert "тикток" in tags
-    # охватные алгоритмические теги всегда присутствуют
+
     assert "fyp" in tags
     assert "mustwatch" in tags
     assert "viral" in tags
 
 
 def test_base_hashtags_append_not_replace():
-    # --base-hashtag не должен убирать дефолтные охватные теги (fyp/viral/shorts)
+
     tags = hashtags.generate_hashtags("текст", base=["шекер"], llm_model=None)
     assert "шекер" in tags
     assert "shorts" in tags
@@ -37,13 +37,13 @@ def test_base_hashtags_append_not_replace():
 
 
 def test_global_hashtags_replace_defaults():
-    # --global-hashtag заменяет дефолтный набор сериальных тегов
+
     tags = hashtags.generate_hashtags(
         "текст", global_tags=["шекер", "сериал"], llm_model=None
     )
     assert "шекер" in tags
     assert "сериал" in tags
-    # дефолтные глобальные не лезут при явно заданных
+
     assert "сторителлинг" not in tags
 
 
@@ -62,7 +62,7 @@ def test_generate_hook_fallback_picks_interesting_sentence():
 def test_generate_hook_is_short():
     text = "Обычный день. Кто отравил пробирку и зачем он это сделал в лаборатории при свете фонаря?" * 3
     hook = hashtags.generate_hook(text, llm_model=None, limit=60)
-    assert len(hook) <= 66  # 60 + пара эмодзи
+    assert len(hook) <= 66
 
 
 def test_generate_hook_empty_text():
@@ -76,9 +76,9 @@ def test_plan_queue_first_immediate_rest_spaced(tmp_path):
     caps = ["c"] * 3
     state = scheduler.plan_queue(vids, caps, interval=interval, state_file=state_file)
     assert len(state.items) == 3
-    # первый — сразу (в пределах секунды от now)
+
     assert abs(state.items[0].scheduled_at - time.time()) < 2
-    # остальные — с шагом interval
+
     assert state.items[1].scheduled_at - state.items[0].scheduled_at >= interval - 2
     assert state.items[2].scheduled_at - state.items[1].scheduled_at >= interval - 2
 
@@ -87,7 +87,7 @@ def test_plan_queue_dedup_existing(tmp_path):
     state_file = str(tmp_path / "sched.json")
     vids = ["/tmp/a.mp4", "/tmp/b.mp4"]
     scheduler.plan_queue(vids, ["c", "c"], interval=100, state_file=state_file)
-    # повторный вызов с тем же + новым — дубликатов нет
+
     state = scheduler.plan_queue(vids + ["/tmp/c.mp4"], ["c"] * 3, interval=100, state_file=state_file)
     paths = [i.video_path for i in state.items]
     assert paths.count("/tmp/a.mp4") == 1

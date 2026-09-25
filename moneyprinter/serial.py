@@ -29,28 +29,28 @@ from .models import ClipCandidate, ClipResult, PipelineResult
 class SerialConfig:
     input_path: str
     output_dir: str = "cuts"
-    part_duration: float = 67.5       # средняя длина микро-серии, сек
-    part_duration_min: float = 65.0   # минимальная длина части, сек
-    part_duration_max: float = 70.0   # максимальная длина части, сек
-    max_parts: int = 0                # 0 = все части до конца видео
-    start: float = 0.0                # с какого момента резать (сек)
-    end: float = 0.0                  # до какого момента (0 = до конца)
+    part_duration: float = 67.5
+    part_duration_min: float = 65.0
+    part_duration_max: float = 70.0
+    max_parts: int = 0
+    start: float = 0.0
+    end: float = 0.0
     vertical: bool = True
     blur_bg: bool = True
-    series_title: str = ""            # название сериала (для подписи/тегов)
-    episode: int = 1                  # номер серии
-    base_hashtags: list = None        # доп. теги (название сериала и т.п.)
-    global_hashtags: list = None      # глобальные теги сериала (одинаковые для всех частей/серий)
-    jobs: int = 0                     # 0 = все ядра
-    whisper_model: str = "base"       # модель транскрипции
+    series_title: str = ""
+    episode: int = 1
+    base_hashtags: list = None
+    global_hashtags: list = None
+    jobs: int = 0
+    whisper_model: str = "base"
     device: str = "auto"
     language: Optional[str] = None
-    llm_model: Optional[str] = None   # локальная LLM для описания по содержанию
+    llm_model: Optional[str] = None
     llm_url: Optional[str] = None
     auto_install: bool = True
-    transcribe_audio: bool = True     # если False — описания без крючка по содержанию
-    enhance: bool = False             # улучшать ли качество клипов после нарезки
-    enhance_cfg: "EnhanceConfig" = None  # параметры улучшения (обычно None = дефолт)
+    transcribe_audio: bool = True
+    enhance: bool = False
+    enhance_cfg: "EnhanceConfig" = None
 
 
 
@@ -87,7 +87,7 @@ def _build_parts(cfg: SerialConfig, duration: float) -> list:
         return random.uniform(lo, hi)
 
     if end - start <= cfg.part_duration_min:
-        # видео короче одной части - один клип на всё
+
         return [(1, start, end)]
 
     parts = []
@@ -95,7 +95,7 @@ def _build_parts(cfg: SerialConfig, duration: float) -> list:
     t = start
     while t < end - 1e-6:
         p_end = min(end, t + _dur())
-        # последний кусок короче минимума - оставляем как есть (не дробим)
+
         parts.append((i, t, p_end))
         t = p_end
         i += 1
@@ -116,12 +116,12 @@ def _make_caption_and_tags(cfg: SerialConfig, part_idx: int, total: int, duratio
     hook = hashtags_mod.generate_hook(
         text, llm_model=cfg.llm_model, llm_url=cfg.llm_url, limit=60
     )
-    # формат: «Кто отравил пробирку?🧪🔍 Смотри до конца.»
+
     snippet = (hook + " " if hook else "") + "Смотри до конца."
-    # теги: по названию сериала + по содержанию части
+
     tags_text = f"{title_bit} серия {cfg.episode} {text}"
     base_tags = list(cfg.base_hashtags or [])
-    # добавляем «чистый» слаг названия сериала как тематический тег
+
     series_slug = re.sub(r"[^\wа-яё]+", "", title_bit.lower())
     if series_slug:
         base_tags.append(series_slug)
@@ -135,9 +135,9 @@ def _make_caption_and_tags(cfg: SerialConfig, part_idx: int, total: int, duratio
 def process_serial(cfg: SerialConfig) -> PipelineResult:
     media.require_ffmpeg()
     input_path = str(cfg.input_path)
-    # Если output_dir не меняли с дефолтного "cuts" — раскладываем по
-    # cuts/<Название сериала>/S<NN>/, чтобы всё (сериалы/фильмы) лежало в
-    # одной папке-контейнере, а разные сериалы/серии не мешались.
+
+
+
     out_dir_str = cfg.output_dir
     if out_dir_str == "cuts" and (cfg.series_title or cfg.episode != 1):
         out_dir_str = os.path.join("cuts", _episode_dir(cfg.series_title, cfg.episode))
@@ -187,8 +187,8 @@ def process_serial(cfg: SerialConfig) -> PipelineResult:
     if total == 0:
         return result
 
-    # --- Транскрипция всего видео один раз (для описания по содержанию) ---
-    # Сопоставим каждой части её текст по таймкодам.
+
+
     part_texts: dict = {}
     if cfg.transcribe_audio and info.has_audio:
         try:
@@ -207,7 +207,7 @@ def process_serial(cfg: SerialConfig) -> PipelineResult:
                     jobs=jobs,
                 )
             for idx, s, e in parts:
-                # собираем текст сегментов, попадающих в [s, e]
+
                 piece = " ".join(
                     seg.text.strip() for seg in segs if seg.start >= s and seg.end <= e
                 )
@@ -221,7 +221,7 @@ def process_serial(cfg: SerialConfig) -> PipelineResult:
         else:
             print("[warn] Нет аудиодорожки — описания по содержанию не будут сгенерированы.")
 
-    # Считаем хронометраж для единого прогресс-бара
+
     total_dur = sum(e - s for _, s, e in parts)
     bar = tqdm(total=total_dur, desc="Нарезка серии", unit="s")
     prefixes = []
@@ -246,7 +246,7 @@ def process_serial(cfg: SerialConfig) -> PipelineResult:
             if enhance_cfg is None:
                 from .enhance import EnhanceConfig
                 enhance_cfg = EnhanceConfig(jobs=cfg.jobs)
-            # улучшаем во временный файл и заменяем исходный клип
+
             tmp_out = out_dir / (Path(out_path).stem + "_tmp.mp4")
             enhance_video(out_path, str(tmp_out), enhance_cfg,
                           total_duration=end - start, bar=bar)
@@ -273,7 +273,7 @@ def process_serial(cfg: SerialConfig) -> PipelineResult:
                 clips[i] = clip
                 done.append(clip)
                 print(f"  ✓ {Path(clip.path).name}  [{clip.start:7.1f}s → {clip.end:7.1f}s]  «{clip.caption[:55]}»")
-                # дописываем отчёт после КАЖДОГО клипа
+
                 _write_report([c for c in clips if c is not None], partial=True)
         except KeyboardInterrupt:
             bar.close()
@@ -283,7 +283,7 @@ def process_serial(cfg: SerialConfig) -> PipelineResult:
     bar.close()
 
     result.clips = [c for c in clips if c is not None]
-    # уже по порядку (индексы по частям), но на всякий сортируем по start
+
     result.clips.sort(key=lambda c: c.start)
 
     _write_report(result.clips, partial=False)
@@ -332,7 +332,7 @@ def regenerate_captions(
     info = media.probe(input_path)
     jobs = jobs or os.cpu_count() or 1
 
-    # Переписываем конфиг из данных клипов (если есть series_title и т.п.)
+
     cfg = SerialConfig(
         input_path=input_path,
         output_dir=output_dir,
@@ -348,7 +348,7 @@ def regenerate_captions(
         auto_install=auto_install,
     )
 
-    # Транскрипция один раз
+
     print("[i] Транскрибирую исходник для перегенерации описаний...")
     with tempfile.TemporaryDirectory(prefix="moneyprinter_regen_") as tmp:
         wav = media.decode_audio_wav(input_path, str(Path(tmp) / "audio.wav"))
@@ -366,7 +366,7 @@ def regenerate_captions(
     for cli in clips:
         start, end = float(cli["start"]), float(cli["end"])
         text = _text_for(start, end)
-        # для подписи нужен реальный номер части — берём из имени файла clip_XX
+
         import re as _re
         m = _re.search(r"clip_(\d+)", Path(cli["path"]).name)
         part_idx = int(m.group(1)) if m else 0
@@ -375,7 +375,7 @@ def regenerate_captions(
         cli["hashtags"] = tags
         cli["caption"] = cap
 
-    # Сохраняем обратно
+
     report.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     csv_path = out_dir / "report.csv"
     with open(csv_path, "w", newline="", encoding="utf-8") as f:

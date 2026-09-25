@@ -26,14 +26,14 @@ from typing import List, Optional
 from .upload import upload_video
 
 DEFAULT_STATE_FILE = os.path.expanduser("~/.moneyprinter/schedule.json")
-DEFAULT_INTERVAL = 7200  # 2 часа
+DEFAULT_INTERVAL = 7200
 
 
 @dataclass
 class QueueItem:
     video_path: str
     caption: str = ""
-    scheduled_at: float = 0.0  # unix-time; 0 = ещё не назначено
+    scheduled_at: float = 0.0
     published: bool = False
     published_at: float = 0.0
     error: str = ""
@@ -77,12 +77,12 @@ def plan_queue(
     existing = {i.video_path for i in state.items}
 
     now = time.time()
-    # база для новых элементов: сразу после последнего запланированного
+
     last_sched = max(
         [i.scheduled_at for i in state.items if i.scheduled_at], default=now
     )
     cursor = last_sched
-    # первый НЕопубликованный элемент (с учётом уже существующих) идёт сразу
+
     has_unpublished = any(not i.published for i in state.items)
     for video, cap in zip(videos, captions):
         if video in existing:
@@ -154,7 +154,7 @@ def publish_next(
     except Exception as exc:  # noqa: BLE001
         item.error = str(exc)
         print(f"[!] Ошибка публикации {os.path.basename(item.video_path)}: {exc}")
-        # оставляем due в прошлом, чтобы системный планировщик повторил скоро
+
         item.scheduled_at = time.time() - interval
         state.save()
         return False
@@ -228,7 +228,7 @@ def install_scheduler(
         subprocess.run(["launchctl", "load", plist_path], check=False)
         return f"launchd agent «{label}» установлен: запуск каждые {minutes} мин."
 
-    # Linux — crontab
+
     cron_line = f"*/{minutes} * * * * {cmd} >> {os.path.expanduser('~/.moneyprinter/cron.log')} 2>&1"
     if dry_run:
         return f"(dry-run) Linux crontab:\n  {cron_line}"
@@ -289,7 +289,7 @@ def run_schedule(
                 except Exception as exc:  # noqa: BLE001 — продолжаем очередь при ошибке
                     item.error = str(exc)
                     print(f"[!] Ошибка публикации {os.path.basename(item.video_path)}: {exc}")
-                    # сдвигаем на интервал, чтобы не спамить при ошибке
+
                     item.scheduled_at = time.time() + interval
             state.save()
             time.sleep(poll)

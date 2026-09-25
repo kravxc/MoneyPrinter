@@ -26,31 +26,31 @@ from tqdm import tqdm
 from .media import FFmpegError, _decode, probe, require_ffmpeg
 
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
+
+
+
 
 @dataclass
 class EnhanceConfig:
     """Параметры улучшения видео."""
     target_width: int = 1920
     target_height: int = 1080
-    crf: int = 18                   # качество (меньше = лучше)
-    preset: str = "slow"            # скорость кодирования (медленнее = лучше)
-    denoise_strength: int = 5       # сила шумоподавления hqdn3d (0 = выкл)
-    deblock: bool = True            # убирать блочность сжатия (пережатые источники)
-    sharpen_strength: float = 0.8   # сила резкости unsharp (0 = выкл)
-    sharp_mode: str = "unsharp"     # unsharp (безопасный, default) | cas | both | off
-    preserve_aspect: bool = True    # сохранять пропорции/ориентацию исходника
-    use_ai: bool = False            # включить Real-ESRGAN
-    ai_model: str = "realesrgan-x4plus"  # модель Real-ESRGAN
-    ai_scale: int = 2               # коэффициент масштабирования AI (2 или 4)
-    jobs: int = 0                   # параллельность (0 = все ядра)
+    crf: int = 18
+    preset: str = "slow"
+    denoise_strength: int = 5
+    deblock: bool = True
+    sharpen_strength: float = 0.8
+    sharp_mode: str = "unsharp"
+    preserve_aspect: bool = True
+    use_ai: bool = False
+    ai_model: str = "realesrgan-x4plus"
+    ai_scale: int = 2
+    jobs: int = 0
 
 
-# ---------------------------------------------------------------------------
-# ffmpeg фильтры
-# ---------------------------------------------------------------------------
+
+
+
 
 def _resolve_scale(cfg: EnhanceConfig, src_w: int, src_h: int) -> str:
     """Возвращает scale-фильтр с учётом ориентации исходника.
@@ -66,11 +66,11 @@ def _resolve_scale(cfg: EnhanceConfig, src_w: int, src_h: int) -> str:
     if cfg.preserve_aspect and tw and th:
         src_vertical = src_h > src_w
         tgt_vertical = th > tw
-        # если ориентация исходника и цели не совпадают — меняем местами
+
         if src_vertical != tgt_vertical:
             tw, th = th, tw
     if not tw or not th:
-        # целевой размер не задан — просто upscale в 2 раза (сохраняя пропорции)
+
         sf = 2
         target_scale = f"scale={src_w * sf}:{src_h * sf}:flags=lanczos"
         return target_scale
@@ -95,30 +95,30 @@ def _build_vf(cfg: EnhanceConfig, src_w: int = 0, src_h: int = 0) -> str:
     """
     parts: list[str] = []
 
-    # 0) remove compression blocks (пережатые источники)
+
     if cfg.deblock:
         parts.append("deblock=filter=1:block=8")
 
-    # 1) шумоподавление (ДО резкости, иначе резкость усиливает шумы)
+
     if cfg.denoise_strength > 0:
         s = cfg.denoise_strength
         parts.append(f"hqdn3d={s}:{s}:{max(1,s-1)}:{s}")
 
-    # 2) резкость
+
     mode = (cfg.sharp_mode or "unsharp").lower()
     if cfg.sharpen_strength > 0 and mode != "off":
         l = max(0.0, cfg.sharpen_strength)
         use_cas = mode in ("cas", "both", "cas+unsharp")
         use_unsharp = mode in ("unsharp", "both", "cas+unsharp")
         if use_cas:
-            # cas шарпит и luma и chroma — может давать цветные артефакты
+
             cas_strength = min(1.0, 0.4 + l * 0.3)
             parts.append(f"cas={cas_strength:.2f}")
         if use_unsharp:
-            # unsharp: luma=1.5, chroma=0 → резкость без цветных ореолов
+
             parts.append(f"unsharp=5:5:{l}:5:5:0.0")
 
-    # 3) масштабирование (сохраняя пропорции исходника)
+
     if src_w and src_h:
         parts.append(_resolve_scale(cfg, src_w, src_h))
     else:
@@ -140,9 +140,9 @@ def _build_encode_args(cfg: EnhanceConfig) -> list:
     ]
 
 
-# ---------------------------------------------------------------------------
-# Real-ESRGAN (ncnn-vulkan)
-# ---------------------------------------------------------------------------
+
+
+
 
 def check_realesrgan() -> bool:
     """Проверяет доступность realesrgan-ncnn-vulkan в PATH."""
@@ -174,7 +174,7 @@ def _enhance_with_ai(
     with tempfile.TemporaryDirectory(prefix="moneyprinter_enhance_") as tmp:
         tmp_upscaled = os.path.join(tmp, "upscaled.mp4")
 
-        # Шаг 1: AI-апскейл
+
         cmd_ai = [
             "realesrgan-ncnn-vulkan",
             "-i", str(input_path),
@@ -197,7 +197,7 @@ def _enhance_with_ai(
         except FileNotFoundError:
             raise FFmpegError("realesrgan-ncnn-vulkan не найден. Установите или отключите --ai.")
 
-        # Шаг 2: ffmpeg — ресайз до целевого размера + фильтры + кодек
+
         vf = _build_vf(cfg, src_w, src_h)
         cmd_ffmpeg = [
             "ffmpeg", "-v", "error", "-y",
@@ -212,9 +212,9 @@ def _enhance_with_ai(
     return output_path
 
 
-# ---------------------------------------------------------------------------
-# Основная функция обработки
-# ---------------------------------------------------------------------------
+
+
+
 
 def enhance_video(
     input_path: str,
@@ -229,7 +229,7 @@ def enhance_video(
     """
     require_ffmpeg()
 
-    # определяем исходное разрешение, чтобы сохранить ориентацию/пропорции
+
     try:
         info = probe(input_path)
         src_w, src_h = int(info.width), int(info.height)
@@ -239,7 +239,7 @@ def enhance_video(
     if cfg.use_ai:
         return _enhance_with_ai(input_path, output_path, cfg, src_w, src_h, total_duration, bar)
 
-    # ffmpeg-only режим
+
     vf = _build_vf(cfg, src_w, src_h)
     cmd = [
         "ffmpeg", "-v", "error", "-y", "-hwaccel", "auto",
@@ -292,9 +292,9 @@ def _run_ffmpeg_enhance(cmd: list, total_duration: float = 0.0, bar=None) -> Non
         raise FFmpegError(f"ffmpeg завершился с ошибкой {proc.returncode}:\n{tail}")
 
 
-# ---------------------------------------------------------------------------
-# Пакетная обработка
-# ---------------------------------------------------------------------------
+
+
+
 
 def enhance_directory(
     input_dir: str,

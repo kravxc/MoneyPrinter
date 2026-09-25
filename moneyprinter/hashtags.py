@@ -11,48 +11,48 @@ from __future__ import annotations
 import re
 from typing import List, Optional
 
-# Глобальные теги сериала/шоу в целом — одинаковые для ВСЕХ частей и серий,
-# чтобы собрать «бренд» сериала. Крутятся на каждом видео независимо от
-# сюжета конкретной части (реально существуют в TikTok, высокий охват).
+
+
+
 GLOBAL_HASHTAGS = [
-    "сериал",                # само слово «сериал»
+    "сериал",
     "сериалы",
-    "сериалток",             # русскоязычное сообщество по сериалам
-    "сериаловнет",           # «сериалов нет» — популярный тренд-мем про пересмотр
-    "смотретьвсем",          # «смотреть всем»
-    "обязателенкпросмотру",  # «обязателен к просмотру»
-    "рекомендую",            # «рекомендую»
-    "топконтент",            # «топ-контент»
-    "шоу",                   # шоу
-    "сторителлинг",          # storytelling
+    "сериалток",
+    "сериаловнет",
+    "смотретьвсем",
+    "обязателенкпросмотру",
+    "рекомендую",
+    "топконтент",
+    "шоу",
+    "сторителлинг",
 ]
 
-# Базовый набор — самые популярные, реально используемые теги TikTok/Shorts
-# (высокий охват, не «банные»). Всегда добавляются для видимости.
+
+
 BASE_HASHTAGS = [
-    # охватные «алгоритмические» теги (существуют и реально крутятся в TikTok)
-    "fyp",          # самый популярный тег TikTok (For You Page)
-    "fypシ",        # вариация fyp с японским символом (огромный охват)
-    "foryou",       # вторая вариация fyp
+
+    "fyp",
+    "fypシ",
+    "foryou",
     "foryoupage",
     "fypage",
     "viral",
     "trending",
     "trend",
     "explore",
-    "mustwatch",    # «обязательно к просмотру»
+    "mustwatch",
     "mustsee",
     "reels",
     "shorts",
-    # русскоязычные
+
     "тикток",
     "фильм",
 ]
 
-# Реально популярные теги по темам (используются миллионами роликов).
-# Ключевое слово из текста → список готовых популярных тегов.
+
+
 _TOPIC_TAGS = [
-    # жанры / настроение
+
     ("смех", ["смешно", "прикол", "комедия", "funny", "humor", "lol"]),
     ("шутк", ["шутка", "прикол", "комедия", "funny"]),
     ("любов", ["любовь", "романтика", "romance", "love"]),
@@ -106,7 +106,7 @@ _TOPIC_TAGS = [
     ("реакц", ["реакция", "reaction", "react"]),
     ("обзор", ["обзор", "review", "разбор"]),
     ("разбор", ["разбор", "review", "аналитика"]),
-    # универсальные «виральные» маркеры
+
     ("ого", ["шок", "wow", "amazing"]),
     ("вау", ["шок", "wow", "amazing"]),
     ("шок", ["шок", "wow", "amazing", "unbelievable"]),
@@ -131,7 +131,7 @@ def _keyword_fallback(text: str, limit: int) -> List[str]:
     """Эвристика без LLM: популярные теги по теме текста + частые слова."""
     low = (text or "").lower()
     tags: List[str] = []
-    # готовые популярные теги по теме
+
     for needle, tags_list in _TOPIC_TAGS:
         if needle in low:
             for t in tags_list:
@@ -139,7 +139,7 @@ def _keyword_fallback(text: str, limit: int) -> List[str]:
                     tags.append(t)
         if len(tags) >= limit:
             break
-    # недобор — частые осмысленные слова (длина >= 4)
+
     words = re.findall(r"[a-zа-яё]{4,}", low, flags=re.UNICODE)
     stop = {
         "этот", "такой", "котор", "потом", "сейчас", "здесь", "там", "говор",
@@ -212,11 +212,11 @@ def generate_hashtags(
     if not smart:
         smart = _keyword_fallback(text, max_smart)
 
-    # порядок: глобальные теги сериала → базовый набор → умные по теме
-    # порядок: глобальные теги сериала → базовый набор → умные по теме.
-    # global_tags ЗАМЕНЯЕТ дефолтный набор сериальных тегов (пользователь сам
-    # выбирает свои). base ДОПОЛНЯЕТ дефолтный охватный набор (fyp/viral/shorts...),
-    # чтобы охватные теги не пропадали при --base-hashtag.
+
+
+
+
+
     global_used = list(global_tags) if global_tags else list(GLOBAL_HASHTAGS)
     base_used = list(BASE_HASHTAGS) + list(base or [])
     out: List[str] = []
@@ -231,7 +231,7 @@ def generate_hashtags(
     for t in smart:
         if t not in out:
             out.append(t)
-    # итоговый лимит — TikTok разрешает до 30 тегов на видео
+
     return out[:30]
 
 
@@ -257,7 +257,7 @@ def _extract_hook_fallback(text: str, limit: int = 70) -> str:
     sentences = [s.strip(" -\t") for s in sentences if len(s.strip()) >= 4]
     if not sentences:
         return (text or "").strip()[:limit]
-    # приоритет — короткие фразы с «удержанием» (вопросы/интрига)
+
     candidates = []
     for needle in ("кто", "почему", "зачем", "что", "где", "как", "?", "смех", "ха",
                    "lol", "ого", "вау", "шок", "ужас", "правда", "тайна", "загадк",
@@ -266,14 +266,14 @@ def _extract_hook_fallback(text: str, limit: int = 70) -> str:
             if needle in sent.lower():
                 candidates.append(sent)
     if candidates:
-        # самая короткая из подходящих
+
         return min(candidates, key=len)[:limit]
     if sentences:
         return min(sentences, key=len)[:limit]
     return (text or "").strip()[:limit]
 
 
-# Эмодзи под настроение/тематику (добавляется в конец крючка)
+
 _EMOJI_BY_TOPIC = [
     ("смех", "😂"), ("ха", "😂"), ("lol", "😂"), ("рж", "😂"),
     ("любов", "❤️"), ("поцел", "😘"), ("свадьб", "💍"),
@@ -339,7 +339,7 @@ def generate_hook(
             hook = resp["message"]["content"].strip().strip('"').strip("'").rstrip(". ")
             hook = hook.splitlines()[0] if hook else ""
             if hook:
-                # гарантируем наличие эмодзи
+
                 if not any(ord(c) > 0x1F000 for c in hook):
                     hook = hook + " " + emoji
                 return hook[:limit + 6]

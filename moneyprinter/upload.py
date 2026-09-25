@@ -25,21 +25,21 @@ from typing import Optional, Tuple
 
 UPLOAD_URL = "https://www.tiktok.com/upload"
 DEFAULT_COOKIE_FILE = os.path.expanduser("~/.moneyprinter/tiktok_cookies.json")
-# Профиль, где остаётся «живой» залогиненный браузер (для входа через Google)
+
 DEFAULT_PROFILE_DIR = os.path.expanduser("~/.moneyprinter/tiktok_profile")
 
-# User-Agent обычного десктопного Chrome — чтобы TikTok/Google не пугались
+
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
-# Прячем признаки автоматизации (navigator.webdriver и т.п.)
+
 STEALTH_JS = (
     "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
     "window.navigator.chrome = {runtime: {}};"
     "Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3]});"
     "Object.defineProperty(navigator, 'languages', {get: () => ['ru-RU','ru','en']});"
-    # прячем фирменные маркеры Playwright (cdc_.*)
+
     "const __proto = Object.getPrototypeOf(navigator);"
     "delete __proto.webdriver;"
     "for (const k of Object.getOwnPropertyNames(__proto)) {"
@@ -75,12 +75,12 @@ def ensure_playwright(auto_install: bool = True) -> bool:
                 "pip install playwright && python -m playwright install chromium"
             ) from exc
 
-    # Проверяем, что chromium скачан (playwright хранит в кэше)
+
     try:
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as pw:
-            # executable_path бросит, если браузер не скачан
+
             _ = pw.chromium.executable_path
         return True
     except Exception:
@@ -133,7 +133,7 @@ def _launch(headed: bool, profile_dir: Optional[str] = None, prefer_chrome: bool
     from playwright.sync_api import sync_playwright
 
     pw = sync_playwright().start()
-    # убираем маркеры автоматизации из аргументов запуска
+
     ignore_default = ["--enable-automation"]
     launch_args = [
         "--disable-blink-features=AutomationControlled",
@@ -216,7 +216,7 @@ def interactive_login(
             page.wait_for_selector("text=Log in", state="detached", timeout=timeout * 1000)
         except Exception:
             pass
-        # небольшая пауза, чтобы сессия устаканилась
+
         time.sleep(3)
         cookies = context.cookies()
         save_cookies(cookies, path)
@@ -248,13 +248,13 @@ def upload_video(
         page = context.new_page()
         page.goto(UPLOAD_URL, wait_until="domcontentloaded")
 
-        # 1) выбрать файл через input[type=file]
+
         file_input = page.wait_for_selector("input[type=file]", timeout=timeout * 1000)
         if file_input is None:
             raise UploadError("Не найден input для загрузки файла.")
         file_input.set_input_files(os.path.abspath(video_path))
 
-        # 2) дождаться окончания обработки/загрузки (пропадает индикатор прогресса)
+
         print("[i] Загружаю видео на сервер TikTok...")
         page.wait_for_function(
             """() => {
@@ -263,19 +263,19 @@ def upload_video(
             }""",
             timeout=timeout * 1000,
         )
-        # небольшая пауза, чтобы появилось поле caption
+
         time.sleep(3)
 
-        # 3) заполнить подпись
+
         caption_box = page.query_selector("div[contenteditable=true]")
         if caption_box is None:
-            # запасной селектор
+
             caption_box = page.query_selector("#root textarea")
         if caption_box is not None and caption:
             caption_box.click()
             caption_box.type(caption, delay=20)
 
-        # 4) нажать «Post» / «Опубликовать»
+
         posted = False
         for sel in ["button:has-text('Post')", "button:has-text('Опубликовать')",
                     "div[role=button]:has-text('Post')"]:
@@ -287,7 +287,7 @@ def upload_video(
         if not posted:
             raise UploadError("Не найдена кнопка публикации. Возможно, изменилась вёрстка TikTok.")
 
-        # 5) дождаться подтверждения
+
         try:
             page.wait_for_selector("text=Your video is being processed", timeout=60000)
         except Exception:

@@ -17,9 +17,9 @@ from .media import FFmpegError, _run
 def read_audio(wav_path: str) -> Tuple[np.ndarray, int]:
     """Читает WAV (16k моно) в float32 массив [-1, 1]."""
     wav = np.fromfile(wav_path, dtype=np.int16)
-    # Пропускаем 44-байтовый WAV-заголовок, если он есть
+
     if wav_path.lower().endswith(".wav") and len(wav) > 44:
-        # заголовок чётный, поэтому сдвиг на 22 int16 == 44 байта
+
         wav = wav[22:]
     x = wav.astype(np.float32) / 32768.0
     return x, 16000

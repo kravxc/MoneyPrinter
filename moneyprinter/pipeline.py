@@ -40,12 +40,12 @@ class Config:
     scene_threshold: float = 27.0
     llm_model: Optional[str] = None
     llm_url: Optional[str] = None
-    jobs: int = 0  # 0 = все ядра CPU
-    auto_install: bool = True  # сам доустанавливать недостающие AI-зависимости
-    keep_audio: bool = False  # не используется сейчас, задел на будущее
+    jobs: int = 0
+    auto_install: bool = True
+    keep_audio: bool = False
     temp_dir: Optional[str] = None
-    enhance: bool = False  # улучшать ли качество клипов после нарезки
-    enhance_cfg: "EnhanceConfig" = None  # параметры улучшения (None = дефолт)
+    enhance: bool = False
+    enhance_cfg: "EnhanceConfig" = None
 
 
 def _energy_only_candidates(
@@ -61,7 +61,7 @@ def _energy_only_candidates(
     if n == 0:
         return []
     cands: List[ClipCandidate] = []
-    # окно = типичная длина клипа
+
     win = max(1, int(min_duration * (n / duration))) if duration else 1
     for i in range(0, n, max(1, win // 2)):
         seg = energy_score[i : i + win]
@@ -92,12 +92,12 @@ def process(cfg: Config) -> PipelineResult:
         wav_path = None
         audio = None
 
-        # 1) Аудио-анализ (если есть аудиодорожка)
+
         if info.has_audio:
             wav_path = media.decode_audio_wav(input_path, str(Path(tmp) / "audio.wav"))
             audio = audio_mod.analyze_audio(wav_path)
         else:
-            # без аудио — только сцены + равномерные кандидаты
+
             audio = {
                 "samples": np.array([], dtype=np.float32),
                 "sample_rate": 16000,
@@ -107,13 +107,13 @@ def process(cfg: Config) -> PipelineResult:
                 "silences": [],
             }
 
-        # 2) Сцены
+
         scene_breaks = scenes_mod.detect_scenes(
             input_path, duration=info.duration, threshold=cfg.scene_threshold, prefer_pyscenedetect=True
         )
         scene_times = [s.time for s in scene_breaks]
 
-        # 3) Транскрипция
+
         text_segments: List[TimestampedText] = []
         if wav_path:
             try:
@@ -129,7 +129,7 @@ def process(cfg: Config) -> PipelineResult:
             except transcribe_mod.TranscriptionError as exc:
                 print(f"[warn] Транскрипция недоступна ({exc}). Использую эвристики без текста.")
 
-        # 4) Кандидаты
+
         if text_segments:
             candidates = score_mod.generate_candidates(
                 audio["energy_score"],
@@ -152,17 +152,17 @@ def process(cfg: Config) -> PipelineResult:
                 cfg.max_clips,
             )
 
-        # 5) Ранжирование
+
         if cfg.llm_model:
             candidates = score_mod.rank_with_llm(
                 candidates, model=cfg.llm_model, base_url=cfg.llm_url
             )
         candidates = score_mod.non_max_suppress(candidates)
         picked = score_mod.pick_top(candidates, max_clips=cfg.max_clips, min_score=cfg.min_score)
-        # Номера клипов — строго по хронологии (как идут по видео)
+
         picked.sort(key=lambda c: c.start)
 
-        # 6) Нарезка (параллельно, чтобы задействовать все ядра CPU)
+
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         def _cut_worker(cand: ClipCandidate, index: int, prefix: float):
@@ -223,10 +223,10 @@ def process(cfg: Config) -> PipelineResult:
                 )
         bar.close()
 
-        # Сортируем итоговые клипы по хронологии для отчёта
+
         result.clips.sort(key=lambda c: c.start)
 
-        # 7) Отчёт
+
         report = out_dir / "report.json"
 
         def _to_jsonable(obj):

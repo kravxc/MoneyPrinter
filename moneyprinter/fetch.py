@@ -65,16 +65,16 @@ def _build_opts(
 ) -> dict:
     """Опции для yt_dlp: исходное качество, h264 (не требует перекодировки)."""
     return {
-        # лучший видео-поток до max_height + аудио; иначе лучший доступный
+
         "format": f"bv*[height<={max_height}]+ba/bv*[height<={max_height}]/bv*+ba/b",
-        # предпочитать по разрешению, кодек h264 (совместим с ffmpeg-merge)
+
         "format_sort": ["res", "vcodec:h264"],
         "merge_output_format": "mp4",
         "outtmpl": str(Path(output_dir) / "%(title)s.%(ext)s"),
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        "no_color": True,  # на Windows цветные коды в логах не нужны
+        "no_color": True,
         "progress_hooks": [_progress_hook],
         "retries": 3,
     }

@@ -14,7 +14,7 @@ import numpy as np
 
 from .models import ClipCandidate, SceneBreak, TimestampedText
 
-# --- Текстовые маркеры (мультиязычные RU/EN) ---
+
 
 LAUGHTER_MARKERS = [
     "ха", "хах", "хех", "хых", "хихи", "аха", "гыг", "бугага",
@@ -50,28 +50,28 @@ def score_text_segment(seg: TimestampedText) -> float:
         return 0.0
     low = text.lower()
 
-    # Наказание за no_speech_prob (вероятно, шум/музыка)
+
     base = 0.1
     base += 0.9 * (1.0 - min(seg.no_speech_prob, 0.95))
 
     base += 0.5 * _word_in(text, LAUGHTER_MARKERS)
     base += 0.4 * _word_in(text, HYPE_MARKERS)
 
-    # Знаки препинания и капс
+
     if any(p in text for p in "!?!…"):
         base += 0.15
     uppercase_ratio = sum(1 for c in text if c.isupper()) / max(1, len(text))
     if uppercase_ratio > 0.4 and len(text) > 3:
         base += 0.2
 
-    # Длина: очень короткие (<4 слов) или слишком длинные реплики менее ценны
+
     n_words = len(text.split())
     if n_words < 4:
         base -= 0.15
     if n_words > 45:
         base -= 0.1
 
-    # СТОП-слова (реклама/музыка)
+
     if _word_in(text, STOP_MARKERS):
         base -= 0.5
 
@@ -81,7 +81,7 @@ def score_text_segment(seg: TimestampedText) -> float:
 def _snap_to_boundary(
     t: float,
     boundaries: List[float],
-    direction: int,  # -1: влево (start), +1: вправо (end)
+    direction: int,
     max_shift: float = 2.5,
 ) -> float:
     """Подвигает границу к ближайшей смене сцены/тишине в пределах max_shift."""
@@ -169,7 +169,7 @@ def generate_candidates(
     candidates: List[ClipCandidate] = []
     for group in group_segments(text_segments, scene_breaks, max_gap):
         start, end = group[0].start, group[-1].end
-        # Расширяем до минимальной длины, притягивая границы к тишине/сценам
+
         if end - start < min_duration:
             need = min_duration - (end - start)
             start = max(0.0, start - need / 2)
@@ -183,7 +183,7 @@ def generate_candidates(
             if part_end > duration:
                 part_end = duration
 
-            # Энергия окна
+
             mask = (energy_times >= part_start) & (energy_times <= part_end)
             e = float(np.mean(energy_score[mask])) if mask.any() else 0.0
 
