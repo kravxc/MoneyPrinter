@@ -9,4 +9,6 @@ input/*
 !input/.gitkeep
 build/
 dist/
-]
+
+# Карта проекта для ИИ-ассистентов (не попадает в git)
+AGENTS.md
