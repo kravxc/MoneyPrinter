@@ -294,6 +294,7 @@ pip install -e .                    # базовые (нужны для наре
 pip install -e .[transcribe]        # транскрипция и описания (whisper)
 pip install -e .[scenes]            # детектор сцен (рекомендуется)
 pip install -e .[upload]            # автопостинг в TikTok (Playwright)
+pip install -e .[fetch]             # скачивание видео с YouTube (yt-dlp)
 ```
 
 Проверка установки (должны показать пути без ошибок):
@@ -320,6 +321,7 @@ moneyprinter/
   score.py      # скоринг/ранжирование кандидатов
   cutting.py    # нарезка + вертикаль 9:16
   hashtags.py   # генерация хештегов и подписи
+  fetch.py      # скачивание видео с YouTube (yt-dlp, исходное качество)
   upload.py     # загрузка в TikTok (Playwright)
   scheduler.py  # очередь отложенных публикаций
   media.py      # обёртки ffmpeg/ffprobe

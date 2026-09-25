@@ -16,6 +16,7 @@ from . import scheduler as scheduler_mod
 from . import hashtags as hashtags_mod
 from . import serial as serial_mod
 from . import enhance as enhance_mod
+from . import fetch as fetch_mod
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -118,6 +119,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p_enhance.add_argument("--ai", action="store_true", help="Использовать Real-ESRGAN (GPU, требует ncnn-vulkan)")
     p_enhance.add_argument("--ai-model", default="realesrgan-x4plus", help="Модель Real-ESRGAN (default: realesrgan-x4plus)")
     p_enhance.add_argument("--jobs", type=int, default=0, help="Параллельность (0 = все ядра)")
+
+    p_fetch = sub.add_parser("fetch", help="Скачать видео с YouTube в исходном качестве (обёртка над yt-dlp)")
+    p_fetch.add_argument("urls", nargs="+", help="Ссылка(и) на видео/шортсы")
+    p_fetch.add_argument("-o", "--output", default="input", help="Папка для скачивания (default: input/)")
+    p_fetch.add_argument("--max-height", type=int, default=1080, help="Макс. высота видеопотока, px (default: 1080)")
+    p_fetch.add_argument("--no-auto-install", action="store_true", help="Не доустанавливать yt-dlp автоматически")
 
     return parser
 
@@ -371,6 +378,17 @@ def _cmd_enhance(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_fetch(args: argparse.Namespace) -> int:
+    paths = fetch_mod.fetch_video_urls(
+        urls=args.urls,
+        output_dir=args.output,
+        max_height=args.max_height,
+        auto_install=not args.no_auto_install,
+    )
+    print(f"\nГотово: скачано {len(paths)} файлов → {args.output}")
+    return 0
+
+
 def _quiet_warnings() -> None:
     """Глушим сторонние warning-логи (HF, urllib3 и т.п.) в консоли."""
     import logging as _l
@@ -412,6 +430,8 @@ def main(argv=None) -> int:
             return _cmd_regen(args)
         if args.command == "enhance":
             return _cmd_enhance(args)
+        if args.command == "fetch":
+            return _cmd_fetch(args)
 
         cfg = Config(
             input_path=args.input,
